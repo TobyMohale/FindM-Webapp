@@ -15,6 +15,8 @@ export default function TapView() {
   const [isDemoFallback, setIsDemoFallback] = useState(false);
   const [showLocationFallback, setShowLocationFallback] = useState(false);
   const [customNote, setCustomNote] = useState('');
+  const [finderName, setFinderName] = useState('');
+  const [finderPhone, setFinderPhone] = useState('');
 
   useEffect(() => {
     const fetchTag = async () => {
@@ -141,12 +143,27 @@ export default function TapView() {
     window.open(waLink, '_blank');
   };
 
-  const handleCustomMessageSubmit = (e: React.FormEvent) => {
+  const handleFinderAlertSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!record?.parent_whatsapp || !customNote.trim()) return;
-    const msg = `[Finder Alert] ${record.child_name || 'Your child'}'s safety tag was just tapped. Message from finder: "${customNote.trim()}" — sent ${new Date().toLocaleTimeString()}`;
+    if (!record?.parent_whatsapp) return;
+    
+    let msg = `🚨 *[EMERGENCY FINDER ALERT]* 🚨\n`;
+    msg += `I have found your child: *${record.child_name || 'Unnamed'}*\n\n`;
+    
+    if (finderName.trim()) {
+      msg += `👤 *Finder Name:* ${finderName.trim()}\n`;
+    }
+    if (finderPhone.trim()) {
+      msg += `📞 *Finder Contact:* ${finderPhone.trim()}\n`;
+    }
+    if (customNote.trim()) {
+      msg += `📍 *Note/Location:* ${customNote.trim()}\n`;
+    }
+    
+    msg += `\n_Sent via FindMe tags at ${new Date().toLocaleTimeString()}_`;
+    
     const waLink = `https://wa.me/${cleanPhone(record.parent_whatsapp).replace('+', '')}?text=${encodeURIComponent(msg)}`;
-    setShareStatus(`Opening WhatsApp with custom text...`);
+    setShareStatus(`Opening WhatsApp to alert parent...`);
     window.open(waLink, '_blank');
   };
 
@@ -390,7 +407,61 @@ export default function TapView() {
             ) : <p className="text-sm text-slate-500 italic">{t.noInfo}</p>}
           </div>
 
-          <div className="mt-auto pt-6">
+          {/* Finder Contact Details Form */}
+          <div className="bg-[#FFF4FA] border border-[#F17FB1]/35 rounded-2xl p-4 shadow-sm">
+            <h2 className="text-xs font-extrabold uppercase tracking-wider text-[#16305C] mb-1 flex items-center gap-1.5">
+              <span>{t.finderHeader}</span>
+            </h2>
+            <p className="text-[11px] text-slate-600 mb-4 leading-relaxed">
+              {t.finderSub}
+            </p>
+
+            <form onSubmit={handleFinderAlertSubmit} className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">{t.finderName}</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Officer Temba"
+                  value={finderName}
+                  onChange={e => setFinderName(e.target.value)}
+                  className="w-full p-2.5 text-xs border border-[#DCE6F5] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#E23F84] bg-white text-[#16305C]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">{t.finderPhone}</label>
+                  <input
+                    type="tel"
+                    placeholder="e.g. 082 123 4567"
+                    value={finderPhone}
+                    onChange={e => setFinderPhone(e.target.value)}
+                    className="w-full p-2.5 text-xs border border-[#DCE6F5] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#E23F84] bg-white text-[#16305C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">{t.finderNote}</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. At information desk"
+                    value={customNote}
+                    onChange={e => setCustomNote(e.target.value)}
+                    className="w-full p-2.5 text-xs border border-[#DCE6F5] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#E23F84] bg-white text-[#16305C]"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={!finderName.trim() && !finderPhone.trim() && !customNote.trim()}
+                className="w-full mt-2 bg-[#16305C] hover:bg-[#3E5B85] text-white py-3 px-4 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-40"
+              >
+                {t.finderBtn}
+              </button>
+            </form>
+          </div>
+
+          <div className="mt-auto pt-4">
             <button 
               onClick={handleShareLocation}
               className="w-full bg-[#E23F84] text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md hover:bg-[#C22E6E] active:scale-[0.98] transition-all"
@@ -408,7 +479,7 @@ export default function TapView() {
                   Web browser policies block live GPS inside sandboxed developer previews. Use these 100% functional simulator options instead:
                 </p>
                 
-                <div className="space-y-2 mb-3">
+                <div className="space-y-2">
                   <button
                     onClick={() => handleSimulatedLocation(-26.1062, 28.0536, 'Sandton, Johannesburg')}
                     className="w-full py-2.5 px-3 bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-between text-[#16305C] shadow-sm"
@@ -424,26 +495,6 @@ export default function TapView() {
                     <span className="text-slate-400">→</span>
                   </button>
                 </div>
-
-                <form onSubmit={handleCustomMessageSubmit} className="border-t border-amber-200 pt-3">
-                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1.5">Or type a manual location description / note:</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="e.g. Found sitting near the food court entrance"
-                      value={customNote}
-                      onChange={e => setCustomNote(e.target.value)}
-                      className="flex-1 p-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#16305C] bg-white"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!customNote.trim()}
-                      className="bg-[#16305C] text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-[#3E5B85] disabled:opacity-50 transition-all whitespace-nowrap shadow-sm"
-                    >
-                      Send Note
-                    </button>
-                  </div>
-                </form>
               </div>
             )}
           </div>
