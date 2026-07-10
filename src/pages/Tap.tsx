@@ -18,31 +18,46 @@ export default function TapView() {
 
   useEffect(() => {
     const fetchTag = async () => {
-      if (!tagId) return;
+      if (!tagId) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setErrorMsg(null);
       setIsDemoFallback(false);
       
+      const demoData = {
+        tag_id: 'demo01',
+        owner_id: 'mock-user-1',
+        child_name: 'Amo Dlamini',
+        avatar: '🦸‍♀️',
+        parent_whatsapp: '+27821234567',
+        contacts: [{ name: 'Thandeka Dlamini', relation: 'Mom', phone: '+27821234567', whatsapp: true }],
+        medical: { allergies: 'Peanuts', conditions: 'Asthma', notes: '' },
+        created_at: new Date().toISOString(),
+        claimed_at: new Date().toISOString()
+      };
+
       try {
-        const { data, error } = await supabase.from('tags').select('*').eq('tag_id', tagId);
+        // Safe check for supabase client
+        if (!supabase || typeof supabase.from !== 'function') {
+          throw new Error('Database client not fully initialized.');
+        }
+
+        // Add 3-second timeout so the UI never hangs in sandbox or on poor connections
+        const fetchPromise = supabase.from('tags').select('*').eq('tag_id', tagId);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Database query timeout (3s limit).')), 3000)
+        );
+
+        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
         
         if (error) {
           console.error("Supabase fetch error:", error);
           setErrorMsg(error.message);
           
-          // Fallback for demo01 even on error
           if (tagId === 'demo01') {
-            setRecord({
-              tag_id: 'demo01',
-              owner_id: 'mock-user-1',
-              child_name: 'Amo Dlamini',
-              avatar: '🦸‍♀️',
-              parent_whatsapp: '+27821234567',
-              contacts: [{ name: 'Thandeka Dlamini', relation: 'Mom', phone: '+27821234567', whatsapp: true }],
-              medical: { allergies: 'Peanuts', conditions: 'Asthma', notes: '' },
-              created_at: new Date().toISOString(),
-              claimed_at: new Date().toISOString()
-            });
+            setRecord(demoData);
             setIsDemoFallback(true);
           } else {
             setRecord(null);
@@ -51,44 +66,29 @@ export default function TapView() {
           const tag = data[0];
           if (!tag.owner_id) {
             // Unclaimed tag
-            navigate(`/claim/${tagId}`, { replace: true });
+            if (tagId === 'demo01') {
+              setRecord(demoData);
+              setIsDemoFallback(true);
+            } else {
+              navigate(`/claim/${tagId}`, { replace: true });
+            }
           } else {
             setRecord(tag);
           }
         } else {
           // No tag found in database
           if (tagId === 'demo01') {
-            setRecord({
-              tag_id: 'demo01',
-              owner_id: 'mock-user-1',
-              child_name: 'Amo Dlamini',
-              avatar: '🦸‍♀️',
-              parent_whatsapp: '+27821234567',
-              contacts: [{ name: 'Thandeka Dlamini', relation: 'Mom', phone: '+27821234567', whatsapp: true }],
-              medical: { allergies: 'Peanuts', conditions: 'Asthma', notes: '' },
-              created_at: new Date().toISOString(),
-              claimed_at: new Date().toISOString()
-            });
+            setRecord(demoData);
             setIsDemoFallback(true);
           } else {
             setRecord(null);
           }
         }
       } catch (err: any) {
-        console.error("Catch error:", err);
-        setErrorMsg(err.message || 'Network error');
+        console.error("Catch error in fetchTag:", err);
+        setErrorMsg(err.message || 'Database connection error');
         if (tagId === 'demo01') {
-          setRecord({
-            tag_id: 'demo01',
-            owner_id: 'mock-user-1',
-            child_name: 'Amo Dlamini',
-            avatar: '🦸‍♀️',
-            parent_whatsapp: '+27821234567',
-            contacts: [{ name: 'Thandeka Dlamini', relation: 'Mom', phone: '+27821234567', whatsapp: true }],
-            medical: { allergies: 'Peanuts', conditions: 'Asthma', notes: '' },
-            created_at: new Date().toISOString(),
-            claimed_at: new Date().toISOString()
-          });
+          setRecord(demoData);
           setIsDemoFallback(true);
         } else {
           setRecord(null);
@@ -151,7 +151,82 @@ export default function TapView() {
   };
 
   if (loading) {
-    return <div className="min-h-screen bg-[#16305C] flex items-center justify-center text-white">Loading...</div>;
+    return (
+      <div className="min-h-screen bg-slate-100 pb-12 sm:pt-8 sm:px-4 flex justify-center font-sans">
+        <div className="w-full max-w-[400px] bg-white sm:rounded-[38px] sm:shadow-2xl overflow-hidden flex flex-col relative min-h-[100dvh] sm:min-h-[750px] border border-slate-200">
+          
+          {/* Hardware Mockup Notch (Desktop preview) */}
+          <div className="hidden sm:block absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-slate-100 rounded-b-2xl z-10"></div>
+          
+          {/* Hero Section Skeleton */}
+          <div className="bg-gradient-to-br from-[#16305C] to-[#3E5B85] text-white p-8 text-center pt-12 relative flex-shrink-0">
+            <div className="absolute top-4 left-4 font-mono text-[9px] opacity-40 bg-white/10 px-2 py-0.5 rounded uppercase tracking-wider animate-pulse">
+              Retrieving profile...
+            </div>
+            
+            {/* Pulsing Avatar Halo */}
+            <div className="relative w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+              <div className="absolute inset-0 bg-[#E23F84]/20 rounded-full animate-ping"></div>
+              <div className="absolute inset-2 bg-white/15 rounded-full border border-white/20 flex items-center justify-center text-2xl animate-pulse">
+                🏷️
+              </div>
+            </div>
+
+            {/* Shimmering Text Placeholders */}
+            <div className="h-5 w-28 bg-white/25 rounded-full mx-auto mb-2.5 animate-pulse" />
+            <div className="h-3 w-40 bg-white/15 rounded-full mx-auto animate-pulse" />
+          </div>
+
+          {/* Body Skeleton */}
+          <div className="flex-1 p-6 space-y-6">
+            {/* Language Bar Skeleton */}
+            <div className="flex justify-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-8 flex-1 bg-slate-200/60 rounded-lg animate-pulse" />
+              ))}
+            </div>
+
+            {/* Emergency Contacts Title Skeleton */}
+            <div className="space-y-3">
+              <div className="h-4 w-32 bg-slate-200 rounded animate-pulse" />
+              <div className="space-y-2.5">
+                {[1, 2].map((i) => (
+                  <div key={i} className="h-16 w-full bg-slate-50 border border-slate-100 rounded-2xl p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-slate-200/80 rounded-full animate-pulse" />
+                      <div className="space-y-1.5">
+                        <div className="h-3 w-20 bg-slate-200 rounded animate-pulse" />
+                        <div className="h-2.5 w-12 bg-slate-200/60 rounded animate-pulse" />
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <div className="w-8 h-8 bg-slate-200/50 rounded-lg animate-pulse" />
+                      <div className="w-8 h-8 bg-slate-200/50 rounded-lg animate-pulse" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Medical Info Skeleton */}
+            <div className="p-4 bg-red-50/40 border border-red-100/50 rounded-2xl space-y-3">
+              <div className="h-3.5 w-24 bg-red-200/60 rounded animate-pulse" />
+              <div className="space-y-1.5">
+                <div className="h-2.5 w-full bg-red-200/40 rounded animate-pulse" />
+                <div className="h-2.5 w-5/6 bg-red-200/40 rounded animate-pulse" />
+              </div>
+            </div>
+
+            {/* Action Button Skeleton */}
+            <div className="pt-2">
+              <div className="h-14 w-full bg-slate-200 rounded-2xl animate-pulse" />
+              <div className="h-2.5 w-32 bg-slate-200/80 rounded mx-auto mt-3 animate-pulse" />
+            </div>
+          </div>
+
+        </div>
+      </div>
+    );
   }
   
   if (!record) {
