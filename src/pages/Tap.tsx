@@ -33,8 +33,8 @@ export default function TapView() {
         owner_id: 'mock-user-1',
         child_name: 'Amo Dlamini',
         avatar: '🦸‍♀️',
-        parent_whatsapp: '+27821234567',
-        contacts: [{ name: 'Thandeka Dlamini', relation: 'Mom', phone: '+27821234567', whatsapp: true }],
+        parent_whatsapp: '',
+        contacts: [{ name: 'Thandeka Dlamini', relation: 'Mom', phone: '', whatsapp: true }],
         medical: { allergies: 'Peanuts', conditions: 'Asthma', notes: '' },
         created_at: new Date().toISOString(),
         claimed_at: new Date().toISOString()

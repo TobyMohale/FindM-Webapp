@@ -39,16 +39,16 @@ if (hasRealSupabase && !isForcedMock()) {
   };
   const setStore = (key: string, val: any) => localStorage.setItem(`findme_${key}`, JSON.stringify(val));
 
-  // Seed demo data if missing
+  // Seed demo data if missing or has old default number
   const tags = getStore('tags');
-  if (!tags['demo01']) {
+  if (!tags['demo01'] || tags['demo01'].parent_whatsapp === '+27821234567') {
     tags['demo01'] = {
       tag_id: 'demo01',
       owner_id: 'mock-user-1',
       child_name: 'Amo Dlamini',
       avatar: '🦸‍♀️',
-      parent_whatsapp: '+27821234567',
-      contacts: [{ name: 'Thandeka Dlamini', relation: 'Mom', phone: '+27821234567', whatsapp: true }],
+      parent_whatsapp: '',
+      contacts: [{ name: 'Thandeka Dlamini', relation: 'Mom', phone: '', whatsapp: true }],
       medical: { allergies: 'Peanuts', conditions: 'Asthma', notes: '' },
       created_at: new Date().toISOString(),
       claimed_at: new Date().toISOString()
