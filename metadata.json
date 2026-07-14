@@ -1,6 +1,6 @@
 {
-  "name": "FindMe",
-  "description": "FindMe physical NFC tags application. Includes public finder view, parent dashboard, and administrative tag generation tools.",
+  "name": "LOV TAP",
+  "description": "LOV TAP child safety wristbands portal. Includes interactive landing pages, physical NFC/QR tap profiles, parent management dashboards, and administrator batch generation tools.",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -63,7 +63,15 @@ if (hasRealSupabase && !isForcedMock()) {
   }
 
   // Simulate currently logged in user
-  let currentUser = localStorage.getItem('findme_session') ? users['mock-user-1'] : null;
+  let currentUser = null;
+  if (localStorage.getItem('findme_session')) {
+    const saved = localStorage.getItem('findme_current_user');
+    if (saved) {
+      try { currentUser = JSON.parse(saved); } catch { currentUser = users['mock-user-1']; }
+    } else {
+      currentUser = users['mock-user-1'];
+    }
+  }
 
   supabaseInstance = {
     auth: {
@@ -73,16 +81,65 @@ if (hasRealSupabase && !isForcedMock()) {
       },
       signInWithOtp: async ({ email }: { email: string }) => {
         await delay();
-        // Auto-login in mock
-        currentUser = users['mock-user-1'];
+        currentUser = { id: 'mock-user-1', email, full_name: 'Parent User', popia_consent_accepted: true };
         localStorage.setItem('findme_session', 'true');
-        return { data: {}, error: null };
+        localStorage.setItem('findme_current_user', JSON.stringify(currentUser));
+        return { data: { user: currentUser }, error: null };
+      },
+      signInWithPassword: async ({ email, password }: { email: string; password?: string }) => {
+        await delay();
+        const usersStore: Record<string, any> = getStore('users');
+        let matchedUser = (Object.values(usersStore) as any[]).find((u: any) => u.email === email);
+        if (!matchedUser) {
+          // Auto register on mock if not exists, or just simulate successful login
+          matchedUser = { id: 'mock-' + Math.random().toString(36).substr(2, 9), email, popia_consent_accepted: true };
+          usersStore[matchedUser.id] = matchedUser;
+          setStore('users', usersStore);
+        }
+        currentUser = matchedUser;
+        localStorage.setItem('findme_session', 'true');
+        localStorage.setItem('findme_current_user', JSON.stringify(currentUser));
+        return { data: { user: currentUser }, error: null };
+      },
+      signUp: async ({ email, password }: { email: string; password?: string }) => {
+        await delay();
+        const usersStore: Record<string, any> = getStore('users');
+        let matchedUser = (Object.values(usersStore) as any[]).find((u: any) => u.email === email);
+        if (matchedUser) {
+          return { data: { user: null }, error: new Error('User already exists.') };
+        }
+        const newUser = { id: 'mock-' + Math.random().toString(36).substr(2, 9), email, popia_consent_accepted: true };
+        usersStore[newUser.id] = newUser;
+        setStore('users', usersStore);
+        currentUser = newUser;
+        localStorage.setItem('findme_session', 'true');
+        localStorage.setItem('findme_current_user', JSON.stringify(currentUser));
+        return { data: { user: newUser }, error: null };
       },
       signOut: async () => {
         await delay();
         currentUser = null;
         localStorage.removeItem('findme_session');
+        localStorage.removeItem('findme_current_user');
         return { error: null };
+      },
+      resetPasswordForEmail: async (email: string, options?: any) => {
+        await delay();
+        const usersStore: Record<string, any> = getStore('users');
+        const matchedUser = (Object.values(usersStore) as any[]).find((u: any) => u.email === email);
+        if (!matchedUser) {
+          return { data: null, error: new Error('No user found with this email address.') };
+        }
+        // Save a mock reset state in localStorage to verify/test
+        localStorage.setItem('findme_mock_reset_email', email);
+        return { data: {}, error: null };
+      },
+      updateUser: async (attributes: { password?: string; data?: any }) => {
+        await delay();
+        if (attributes.password) {
+          console.log('Mock password updated successfully');
+        }
+        return { data: { user: currentUser || { email: 'mock@example.com' } }, error: null };
       }
     },
     from: (table: string) => ({

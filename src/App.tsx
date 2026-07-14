@@ -5,6 +5,7 @@ import Admin from './pages/Admin';
 import Dashboard from './pages/Dashboard';
 import Tap from './pages/Tap';
 import Home from './pages/Home';
+import ResetPassword from './pages/ResetPassword';
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="claim/:tagId" element={<Dashboard />} />
           <Route path="t/:tagId" element={<Tap />} />
+          <Route path="reset-password" element={<ResetPassword />} />
         </Route>
       </Routes>
     </BrowserRouter>

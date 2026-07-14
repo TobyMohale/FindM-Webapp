@@ -160,7 +160,7 @@ export default function TapView() {
       msg += `📍 *Note/Location:* ${customNote.trim()}\n`;
     }
     
-    msg += `\n_Sent via FindMe tags at ${new Date().toLocaleTimeString()}_`;
+    msg += `\n_Sent via LoTap tags at ${new Date().toLocaleTimeString()}_`;
     
     const waLink = `https://wa.me/${cleanPhone(record.parent_whatsapp).replace('+', '')}?text=${encodeURIComponent(msg)}`;
     setShareStatus(`Opening WhatsApp to alert parent...`);
@@ -169,21 +169,27 @@ export default function TapView() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-100 pb-12 sm:pt-8 sm:px-4 flex justify-center font-sans">
-        <div className="w-full max-w-[400px] bg-white sm:rounded-[38px] sm:shadow-2xl overflow-hidden flex flex-col relative min-h-[100dvh] sm:min-h-[750px] border border-slate-200">
+      <div className="min-h-screen bg-[#FDFBF7] pb-12 sm:pt-8 sm:px-4 flex justify-center font-sans relative overflow-hidden">
+        {/* Morphing Liquid Background Blobs */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+          <div className="absolute top-[15%] left-[-20%] w-[350px] h-[350px] bg-[#FFCFF1] opacity-[0.5] blur-[80px] animate-morph-blob-1 rounded-full"></div>
+          <div className="absolute bottom-[20%] right-[-20%] w-[350px] h-[350px] bg-[#C54B8C] opacity-[0.16] blur-[90px] animate-morph-blob-2 rounded-full"></div>
+        </div>
+
+        <div className="w-full max-w-[400px] glass-liquid-card sm:rounded-[38px] sm:shadow-2xl overflow-hidden flex flex-col relative min-h-[100dvh] sm:min-h-[750px] z-10">
           
           {/* Hardware Mockup Notch (Desktop preview) */}
           <div className="hidden sm:block absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-slate-100 rounded-b-2xl z-10"></div>
           
           {/* Hero Section Skeleton */}
-          <div className="bg-gradient-to-br from-[#16305C] to-[#3E5B85] text-white p-8 text-center pt-12 relative flex-shrink-0">
+          <div className="bg-gradient-to-br from-[#051650] to-[#0A2472] text-white p-8 text-center pt-12 relative flex-shrink-0">
             <div className="absolute top-4 left-4 font-mono text-[9px] opacity-40 bg-white/10 px-2 py-0.5 rounded uppercase tracking-wider animate-pulse">
               Retrieving profile...
             </div>
             
             {/* Pulsing Avatar Halo */}
             <div className="relative w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-              <div className="absolute inset-0 bg-[#E23F84]/20 rounded-full animate-ping"></div>
+              <div className="absolute inset-0 bg-[#C54B8C]/20 rounded-full animate-ping"></div>
               <div className="absolute inset-2 bg-white/15 rounded-full border border-white/20 flex items-center justify-center text-2xl animate-pulse">
                 🏷️
               </div>
@@ -248,12 +254,18 @@ export default function TapView() {
   
   if (!record) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6 font-sans">
-        <div className="bg-white p-8 rounded-2xl shadow-md border border-slate-200 text-center max-w-md w-full">
+      <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center p-6 font-sans relative overflow-hidden">
+        {/* Morphing Liquid Background Blobs */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+          <div className="absolute top-[15%] left-[-20%] w-[350px] h-[350px] bg-[#FFCFF1] opacity-[0.5] blur-[80px] animate-morph-blob-1 rounded-full"></div>
+          <div className="absolute bottom-[20%] right-[-20%] w-[350px] h-[350px] bg-[#C54B8C] opacity-[0.16] blur-[90px] animate-morph-blob-2 rounded-full"></div>
+        </div>
+
+        <div className="glass-liquid-card p-8 rounded-3xl shadow-2xl text-center max-w-md w-full z-10">
           <div className="text-5xl mb-4">🏷️</div>
-          <h2 className="text-xl font-bold text-[#16305C] mb-2 font-serif">Tag Not Found or Inactive</h2>
+          <h2 className="text-xl font-bold text-[#051650] mb-2 font-serif">Tag Not Found or Inactive</h2>
           <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-            We couldn't find a registered safety tag with ID <span className="font-mono bg-slate-100 text-[#E23F84] px-1.5 py-0.5 rounded text-xs font-semibold">{tagId}</span> in the database.
+            We couldn't find a registered safety tag with ID <span className="font-mono bg-slate-100 text-[#C54B8C] px-1.5 py-0.5 rounded text-xs font-semibold">{tagId}</span> in the database.
           </p>
 
           {errorMsg && (
@@ -295,7 +307,7 @@ export default function TapView() {
                   setLoading(false);
                 }
               }}
-              className="w-full py-3 px-4 bg-[#16305C] hover:bg-[#3E5B85] text-white font-bold rounded-xl text-xs transition-all shadow-sm flex items-center justify-center gap-2"
+              className="w-full py-3 px-4 bg-[#051650] hover:bg-[#0A2472] text-white font-bold rounded-xl text-xs transition-all shadow-sm flex items-center justify-center gap-2"
             >
               <span>✨</span> Create & Register Tag "{tagId}" Instantly
             </button>
@@ -319,7 +331,7 @@ export default function TapView() {
               </button>
               <button
                 onClick={() => navigate('/dashboard')}
-                className="py-2.5 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[#16305C] font-bold rounded-lg text-xs transition-all"
+                className="py-2.5 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[#051650] font-bold rounded-lg text-xs transition-all"
               >
                 ⚙️ Parent Dashboard
               </button>
@@ -334,8 +346,14 @@ export default function TapView() {
   const hasMedical = record.medical?.allergies || record.medical?.conditions || record.medical?.notes;
 
   return (
-    <div className="min-h-screen bg-slate-100 pb-12 sm:pt-8 sm:px-4 flex justify-center font-sans">
-      <div className="w-full max-w-[400px] bg-white sm:rounded-[38px] sm:shadow-2xl overflow-hidden flex flex-col relative min-h-[100dvh] sm:min-h-[750px] border border-slate-200">
+    <div className="min-h-screen bg-[#FDFBF7] pb-12 sm:pt-8 sm:px-4 flex justify-center font-sans relative overflow-hidden">
+      {/* Morphing Liquid Background Blobs */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute top-[15%] left-[-20%] w-[350px] h-[350px] bg-[#FFCFF1] opacity-[0.5] blur-[80px] animate-morph-blob-1 rounded-full"></div>
+        <div className="absolute bottom-[20%] right-[-20%] w-[350px] h-[350px] bg-[#C54B8C] opacity-[0.16] blur-[90px] animate-morph-blob-2 rounded-full"></div>
+      </div>
+
+      <div className="w-full max-w-[400px] glass-liquid-card sm:rounded-[38px] sm:shadow-2xl overflow-hidden flex flex-col relative min-h-[100dvh] sm:min-h-[750px] z-10">
         
         {isDemoFallback && (
           <div className="bg-amber-500 text-white text-[10px] uppercase tracking-wider font-bold text-center py-1.5 px-4 flex items-center justify-center gap-1.5 relative z-20">
@@ -347,11 +365,11 @@ export default function TapView() {
         <div className="hidden sm:block absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-slate-100 rounded-b-2xl z-10"></div>
         
         {/* Hero Section */}
-        <div className="bg-gradient-to-br from-[#16305C] to-[#3E5B85] text-white p-8 text-center pt-12 relative">
+        <div className="bg-gradient-to-br from-[#051650] to-[#0A2472] text-white p-8 text-center pt-12 relative">
           <div className="absolute top-4 left-4 font-mono text-xs opacity-50">{record.tag_id}</div>
           <div className="relative w-20 h-20 mx-auto mb-4">
-            <div className="absolute inset-0 bg-[#F17FB1] rounded-full animate-ping opacity-20"></div>
-            <div className="absolute inset-0 bg-white/10 rounded-full flex items-center justify-center text-4xl border-2 border-[#F17FB1]">
+            <div className="absolute inset-0 bg-[#C54B8C] rounded-full animate-ping opacity-20"></div>
+            <div className="absolute inset-0 bg-white/10 rounded-full flex items-center justify-center text-4xl border-2 border-[#C54B8C]">
               {record.avatar || '🧒'}
             </div>
           </div>
@@ -360,12 +378,12 @@ export default function TapView() {
         </div>
 
         {/* Language Switcher */}
-        <div className="flex gap-2 p-4 bg-[#F5EAF1] overflow-x-auto border-b border-[#DCE6F5] hide-scrollbar">
+        <div className="flex gap-2 p-4 bg-[#FFCFF1] overflow-x-auto border-b border-[#DCE6F5] hide-scrollbar">
           {LANGS.map(l => (
             <button 
               key={l.code}
               onClick={() => setLang(l.code as LangCode)}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${lang === l.code ? 'bg-[#16305C] text-white shadow-sm' : 'bg-white text-[#3E5B85] border border-[#DCE6F5]'}`}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${lang === l.code ? 'bg-[#051650] text-white shadow-sm' : 'bg-white text-[#0A2472] border border-[#DCE6F5]'}`}
             >
               {l.label}
             </button>
@@ -375,17 +393,17 @@ export default function TapView() {
         {/* Info Body */}
         <div className="p-5 flex-1 flex flex-col gap-6">
           <div>
-            <h2 className="text-xs font-bold uppercase tracking-wider text-[#3E5B85] mb-3">{t.emergencyContacts}</h2>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[#0A2472] mb-3">{t.emergencyContacts}</h2>
             {record.contacts && record.contacts.length > 0 ? (
               record.contacts.map((c: any, i: number) => (
                 <div key={i} className="flex items-center justify-between bg-white border border-[#DCE6F5] rounded-xl p-3 mb-2 shadow-sm">
                   <div>
-                    <div className="font-semibold text-sm text-[#16305C]">{c.name}</div>
-                    <div className="text-xs text-[#3E5B85]">{c.relation}</div>
+                    <div className="font-semibold text-sm text-[#051650]">{c.name}</div>
+                    <div className="text-xs text-[#0A2472]">{c.relation}</div>
                   </div>
                   <div className="flex gap-2">
                     {c.phone && (
-                      <a href={`tel:${cleanPhone(c.phone)}`} className="w-9 h-9 rounded-full bg-[#2A5FD9] text-white flex items-center justify-center text-sm shadow-sm hover:bg-[#1E4CB8] transition-colors" title={t.call}>📞</a>
+                      <a href={`tel:${cleanPhone(c.phone)}`} className="w-9 h-9 rounded-full bg-[#051650] text-white flex items-center justify-center text-sm shadow-sm hover:bg-[#0A2472] transition-colors" title={t.call}>📞</a>
                     )}
                     {c.whatsapp && c.phone && (
                       <a href={`https://wa.me/${cleanPhone(c.phone).replace('+', '')}`} target="_blank" rel="noreferrer" className="w-9 h-9 rounded-full bg-[#25D366] text-white flex items-center justify-center text-sm shadow-sm hover:bg-[#20bd5a] transition-colors" title={t.whatsapp}>💬</a>
@@ -397,9 +415,9 @@ export default function TapView() {
           </div>
 
           <div>
-            <h2 className="text-xs font-bold uppercase tracking-wider text-[#3E5B85] mb-3">{t.medicalInfo}</h2>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[#0A2472] mb-3">{t.medicalInfo}</h2>
             {hasMedical ? (
-              <div className="bg-white border border-[#DCE6F5] rounded-xl p-4 shadow-sm text-sm text-[#16305C] space-y-2">
+              <div className="bg-white border border-[#DCE6F5] rounded-xl p-4 shadow-sm text-sm text-[#051650] space-y-2">
                 {record.medical.allergies && <div><span className="font-bold">{t.allergies}:</span> {record.medical.allergies}</div>}
                 {record.medical.conditions && <div><span className="font-bold">{t.conditions}:</span> {record.medical.conditions}</div>}
                 {record.medical.notes && <div className="pt-2 mt-2 border-t border-slate-100 leading-relaxed"><span className="font-bold">{t.notes}:</span> <br/>{record.medical.notes}</div>}
@@ -408,8 +426,8 @@ export default function TapView() {
           </div>
 
           {/* Finder Contact Details Form */}
-          <div className="bg-[#FFF4FA] border border-[#F17FB1]/35 rounded-2xl p-4 shadow-sm">
-            <h2 className="text-xs font-extrabold uppercase tracking-wider text-[#16305C] mb-1 flex items-center gap-1.5">
+          <div className="bg-[#FFCFF1] border border-[#D470A2]/35 rounded-2xl p-4 shadow-sm">
+            <h2 className="text-xs font-extrabold uppercase tracking-wider text-[#051650] mb-1 flex items-center gap-1.5">
               <span>{t.finderHeader}</span>
             </h2>
             <p className="text-[11px] text-slate-600 mb-4 leading-relaxed">
@@ -424,7 +442,7 @@ export default function TapView() {
                   placeholder="e.g. Officer Temba"
                   value={finderName}
                   onChange={e => setFinderName(e.target.value)}
-                  className="w-full p-2.5 text-xs border border-[#DCE6F5] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#E23F84] bg-white text-[#16305C]"
+                  className="w-full p-2.5 text-xs border border-[#DCE6F5] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C54B8C] bg-white text-[#051650]"
                 />
               </div>
 
@@ -436,7 +454,7 @@ export default function TapView() {
                     placeholder="e.g. 082 123 4567"
                     value={finderPhone}
                     onChange={e => setFinderPhone(e.target.value)}
-                    className="w-full p-2.5 text-xs border border-[#DCE6F5] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#E23F84] bg-white text-[#16305C]"
+                    className="w-full p-2.5 text-xs border border-[#DCE6F5] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C54B8C] bg-white text-[#051650]"
                   />
                 </div>
                 <div>
@@ -446,7 +464,7 @@ export default function TapView() {
                     placeholder="e.g. At information desk"
                     value={customNote}
                     onChange={e => setCustomNote(e.target.value)}
-                    className="w-full p-2.5 text-xs border border-[#DCE6F5] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#E23F84] bg-white text-[#16305C]"
+                    className="w-full p-2.5 text-xs border border-[#DCE6F5] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C54B8C] bg-white text-[#051650]"
                   />
                 </div>
               </div>
@@ -454,7 +472,7 @@ export default function TapView() {
               <button
                 type="submit"
                 disabled={!finderName.trim() && !finderPhone.trim() && !customNote.trim()}
-                className="w-full mt-2 bg-[#16305C] hover:bg-[#3E5B85] text-white py-3 px-4 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-40"
+                className="w-full mt-2 bg-[#051650] hover:bg-[#0A2472] text-white py-3 px-4 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-40"
               >
                 {t.finderBtn}
               </button>
@@ -464,14 +482,14 @@ export default function TapView() {
           <div className="mt-auto pt-4">
             <button 
               onClick={handleShareLocation}
-              className="w-full bg-[#E23F84] text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md hover:bg-[#C22E6E] active:scale-[0.98] transition-all"
+              className="w-full bg-[#C54B8C] text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md hover:bg-[#B53389] active:scale-[0.98] transition-all"
             >
               📍 {t.shareLocation}
             </button>
-            <p className="text-center text-xs text-[#3E5B85] mt-3 min-h-4 font-medium leading-relaxed">{shareStatus}</p>
+            <p className="text-center text-xs text-[#0A2472] mt-3 min-h-4 font-medium leading-relaxed">{shareStatus}</p>
 
             {showLocationFallback && (
-              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-left text-[#16305C] animate-fadeIn">
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-left text-[#051650] animate-fadeIn">
                 <p className="text-xs font-extrabold uppercase text-amber-800 mb-1 flex items-center gap-1">
                   <span>💡</span> Sandbox Geolocation Helper
                 </p>
@@ -482,14 +500,14 @@ export default function TapView() {
                 <div className="space-y-2">
                   <button
                     onClick={() => handleSimulatedLocation(-26.1062, 28.0536, 'Sandton, Johannesburg')}
-                    className="w-full py-2.5 px-3 bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-between text-[#16305C] shadow-sm"
+                    className="w-full py-2.5 px-3 bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-between text-[#051650] shadow-sm"
                   >
                     <span>🏙️ Send Sandton, JHB GPS link</span>
                     <span className="text-slate-400">→</span>
                   </button>
                   <button
                     onClick={() => handleSimulatedLocation(-33.9249, 18.4241, 'Waterfront, Cape Town')}
-                    className="w-full py-2.5 px-3 bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-between text-[#16305C] shadow-sm"
+                    className="w-full py-2.5 px-3 bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-between text-[#051650] shadow-sm"
                   >
                     <span>🏖️ Send Cape Town GPS link</span>
                     <span className="text-slate-400">→</span>
