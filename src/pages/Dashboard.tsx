@@ -698,25 +698,6 @@ export default function Dashboard() {
                   <span>⚡</span> One-Click Demo Bypass (Instant Parent View)
                 </button>
               </div>
-
-              <div className="text-center w-full pt-2 border-t border-dashed border-slate-200">
-                <p className="text-[10px] text-slate-400 leading-relaxed mb-2">
-                  Supabase Auth enforces a limit of 3 signups/hour. To clear local mock data or restart testing:
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm('Are you sure you want to clear all browser cache and mock database tables? This will delete all mock profiles, registered tags, and reset the active parent session.')) {
-                      localStorage.clear();
-                      alert('System successfully reset! Redirecting to start fresh.');
-                      window.location.href = '/dashboard';
-                    }
-                  }}
-                  className="w-full py-2 px-4 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 font-semibold rounded-xl text-[11px] transition-colors flex items-center justify-center gap-1.5 shadow-sm"
-                >
-                  <span>🔄</span> Clear Saved Cache & Reset System
-                </button>
-              </div>
             </div>
           )}
         </div>

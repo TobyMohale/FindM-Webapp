@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import lotapCover from '../assets/images/lotap_charcoal_red_gradient_1784055218360.jpg';
+import lotapCover from '../assets/images/silicone_wristband_mockup_1784122040773.jpg';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -131,6 +131,7 @@ export default function Home() {
               src={lotapCover} 
               alt="LoTap child wristband mockup" 
               className="relative z-10 rounded-3xl shadow-2xl border-4 border-white w-full object-cover aspect-[4/3]"
+              referrerPolicy="no-referrer"
             />
 
             {/* Specifications badge below the image */}
@@ -139,7 +140,7 @@ export default function Home() {
                 <span>🏷️</span> Features & Specifications
               </p>
               <p className="text-xs text-white leading-relaxed font-semibold">
-                Soft, hypoallergenic dual-color silicone band featuring an integrated premium scannable QR code & built-in NFC chip for lightning-fast child safety scans. Waterproof, comfortable, and always ready to protect.
+                Soft, hypoallergenic dual-color silicone band featuring a secure, integrated built-in NFC chip for lightning-fast child safety scans. Waterproof, comfortable, and always ready to protect.
               </p>
             </div>
           </div>
@@ -213,18 +214,6 @@ export default function Home() {
                       {/* Left circular loop hole */}
                       <circle cx="28" cy="30" r="10" fill="#FDFBF7" />
                       <circle cx="28" cy="30" r="8" fill="none" stroke="#e2e8f0" strokeWidth="1" />
-                      
-                      {/* Scannable QR code section placeholder */}
-                      <g fill="white" transform="translate(55, 21)">
-                        <rect width="18" height="18" rx="2" />
-                        {/* QR Code matrix pattern */}
-                        <rect x="2" y="2" width="5" height="5" fill={selectedColor} />
-                        <rect x="11" y="2" width="5" height="5" fill={selectedColor} />
-                        <rect x="2" y="11" width="5" height="5" fill={selectedColor} />
-                        <rect x="11" y="11" width="3" height="3" fill={selectedColor} />
-                        <rect x="8" y="5" width="2" height="2" fill={selectedColor} />
-                        <rect x="5" y="8" width="4" height="2" fill={selectedColor} />
-                      </g>
 
                       {/* Central wide NFC sensor capsule */}
                       <rect x="160" y="8" width="130" height="44" rx="22" fill={selectedColor} stroke="white" strokeWidth="2.5" />
