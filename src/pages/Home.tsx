@@ -69,13 +69,41 @@ export default function Home() {
               </div>
 
               {/* Set Up button (Pill shaped, matching draft button "SET UP") */}
-              <div className="pt-2">
+              <div className="pt-2 flex flex-wrap items-center gap-4">
                 <button 
                   onClick={() => navigate('/dashboard')} 
                   className="bg-[#051650] text-white px-8 py-3 rounded-full font-black text-xs uppercase tracking-wider hover:bg-[#0A2472] transition-all shadow-md shadow-[#051650]/20"
                 >
-                  SET UP
+                  SET UP PORTAL
                 </button>
+              </div>
+
+              {/* Set Up / Claim Code Input */}
+              <div className="pt-4 border-t border-[#FFCFF1]/40 mt-4">
+                <p className="text-xs font-bold text-[#051650] uppercase tracking-wider mb-2">Have a physical wristband?</p>
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const targetCode = (e.currentTarget.elements.namedItem('code') as HTMLInputElement).value.trim().toUpperCase();
+                  if (targetCode.length === 6) {
+                    navigate(`/t/${targetCode}`);
+                  } else {
+                    alert('Please enter a valid 6-character code.');
+                  }
+                }} className="flex gap-2 max-w-sm">
+                  <input 
+                    name="code"
+                    type="text"
+                    maxLength={6}
+                    placeholder="Enter 6-char code (e.g. AB12CD)"
+                    className="flex-1 px-4 py-2.5 bg-white border border-[#FFCFF1] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-bold text-[#051650] uppercase placeholder:normal-case transition-all shadow-inner"
+                  />
+                  <button 
+                    type="submit"
+                    className="bg-[#C54B8C] text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-opacity-90 transition-all shadow-sm"
+                  >
+                    GO
+                  </button>
+                </form>
               </div>
 
               {/* Arrow pointing from wavy lines placeholder to value prop quote */}
@@ -90,7 +118,7 @@ export default function Home() {
             {/* Core Value Proposition Box (where arrow points) */}
             <div className="p-6 bg-[#FFCFF1]/30 border-l-4 border-[#C54B8C] rounded-r-2xl">
               <p className="text-md sm:text-lg text-[#051650] font-bold italic leading-relaxed font-sans">
-                "You can't guarantee that your child will remember who to call in an emergency but you can assure they will with LOV TAP."
+                "You can't guarantee that your child will remember who to call in an emergency but you can assure they will with LoTap."
               </p>
             </div>
           </div>
@@ -101,7 +129,7 @@ export default function Home() {
             
             <img 
               src={lotapCover} 
-              alt="LOV TAP child wristband mockup" 
+              alt="LoTap child wristband mockup" 
               className="relative z-10 rounded-3xl shadow-2xl border-4 border-white w-full object-cover aspect-[4/3]"
             />
 
@@ -130,7 +158,7 @@ export default function Home() {
               See How It Works
             </h2>
             <p className="text-slate-500 text-sm max-w-lg mx-auto leading-relaxed">
-              Customize the physical LOV TAP band design on the left, and interact with the live phone simulator on the right to see what displays when the tag is physically tapped or scanned.
+              Customize the physical LoTap band design on the left, and interact with the live phone simulator on the right to see what displays when the tag is physically tapped or scanned.
             </p>
           </div>
 
@@ -153,11 +181,8 @@ export default function Home() {
                   {[
                     { name: 'Deep Blue', value: '#051650', bg: 'bg-[#051650]' },
                     { name: 'Mulberry Pink', value: '#C54B8C', bg: 'bg-[#C54B8C]' },
-                    { name: 'Midnight Black', value: '#0F172A', bg: 'bg-slate-900' },
+                    { name: 'Active Red', value: '#DC2626', bg: 'bg-red-600' },
                     { name: 'Forest Green', value: '#059669', bg: 'bg-emerald-600' },
-                    { name: 'Sunset Orange', value: '#EA580C', bg: 'bg-orange-600' },
-                    { name: 'Sky Cyan', value: '#0891B2', bg: 'bg-cyan-600' },
-                    { name: 'Orchid Purple', value: '#9333EA', bg: 'bg-purple-600' },
                   ].map((c) => (
                     <button
                       key={c.name}
@@ -298,7 +323,7 @@ export default function Home() {
                     {/* Status Bar */}
                     <div className="bg-slate-50 pt-6 pb-2.5 px-6 flex justify-between items-center border-b border-slate-100 text-[10px] font-black tracking-wider text-slate-400">
                       <span>9:41 📡</span>
-                      <span>LOV TAP ACTIVE</span>
+                      <span>LOTAP ACTIVE</span>
                       <span>🔋 100%</span>
                     </div>
 

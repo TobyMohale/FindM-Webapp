@@ -30,15 +30,15 @@ export default function Layout() {
           <Link to="/" className="flex items-center gap-2 group select-none">
             <span className="font-black text-2xl tracking-tight text-[#051650] flex items-center gap-1.5 leading-none">
               <span className="relative inline-block pb-1.5">
-                LOV
-                {/* Wavy ripple line underneath LOV */}
+                Lo
+                {/* Wavy ripple line underneath Lo */}
                 <span className="absolute bottom-0 left-0 right-0 h-2 overflow-hidden">
                   <svg viewBox="0 0 100 20" preserveAspectRatio="none" className="w-full h-full text-[#C54B8C] fill-none stroke-[#C54B8C] stroke-[8px]">
                     <path d="M 0 10 Q 25 20, 50 10 T 100 10" />
                   </svg>
                 </span>
               </span>
-              <span className="text-[#C54B8C]">TAP</span>
+              <span className="text-[#C54B8C]">Tap</span>
             </span>
           </Link>
           <nav className="flex items-center gap-3 sm:gap-6">

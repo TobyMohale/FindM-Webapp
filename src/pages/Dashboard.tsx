@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase, hasRealSupabase, isForcedMock, setForcedMock, generateId } from '../lib/supabase';
 
+const getPublicOrigin = () => {
+  return window.location.origin;
+};
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -30,12 +34,16 @@ export default function Dashboard() {
   const [childName, setChildName] = useState('Emma');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [registeredTagId, setRegisteredTagId] = useState<string | null>(null);
+  const [signupTagId, setSignupTagId] = useState('');
 
   useEffect(() => {
     // Check if we arrived via a claim route (/claim/:tag_id)
     const match = location.pathname.match(/^\/claim\/(.+)$/);
     if (match && match[1]) {
-      setTagToClaim(match[1]);
+      const code = match[1].toUpperCase();
+      setTagToClaim(code);
+      setSignupTagId(code);
+      setIsSignUp(true); // Guide them straight to sign up
     }
   }, [location.pathname]);
 
@@ -111,6 +119,10 @@ export default function Dashboard() {
       setAuthMsg('You must accept the POPIA data privacy consent to proceed.');
       return;
     }
+    if (signupTagId && signupTagId.trim().length !== 6) {
+      setAuthMsg('Wristband Tag Code must be exactly 6 characters long.');
+      return;
+    }
     setAuthMsg('');
     setSignUpStep(2);
   };
@@ -154,34 +166,67 @@ export default function Dashboard() {
       return;
     }
 
-    // 2. Generate and claim a unique tag for their child
-    const newTagId = generateId();
+    // 2. Generate or claim the 6-character tag ID
+    const newTagId = signupTagId.trim().toUpperCase() || generateId();
     
-    const tagPayload = {
-      tag_id: newTagId,
-      owner_id: registeredUser.id,
-      child_name: childName || 'Emma',
-      avatar: '👧',
-      parent_whatsapp: '',
-      contacts: [],
-      medical: { allergies: '', conditions: '', notes: '' },
-      claimed_at: new Date().toISOString()
-    };
-
-    const { error: insertError } = await supabase.from('tags').insert(tagPayload);
+    // Check if the tag already exists in the DB
+    const { data: existingTagData } = await supabase.from('tags').select('tag_id, owner_id').eq('tag_id', newTagId);
     
-    if (insertError) {
-      console.error('Error inserting auto-generated tag:', insertError);
+    let dbSuccess = false;
+    if (existingTagData && existingTagData.length > 0) {
+      const existingTag = existingTagData[0];
+      if (existingTag.owner_id && existingTag.owner_id !== registeredUser.id) {
+        setAuthMsg(`This Tag Code (${newTagId}) has already been registered to another parent.`);
+        setAuthLoading(false);
+        return;
+      }
+      
+      // Update existing unclaimed tag
+      const { error: updateError } = await supabase.from('tags').update({
+        owner_id: registeredUser.id,
+        child_name: childName || 'Emma',
+        avatar: '👧',
+        claimed_at: new Date().toISOString()
+      }).eq('tag_id', newTagId);
+      
+      if (!updateError) {
+        dbSuccess = true;
+      } else {
+        console.error('Error updating existing tag:', updateError);
+      }
+    } else {
+      // Insert brand new tag
+      const tagPayload = {
+        tag_id: newTagId,
+        owner_id: registeredUser.id,
+        child_name: childName || 'Emma',
+        avatar: '👧',
+        parent_whatsapp: '',
+        contacts: [],
+        medical: { allergies: '', conditions: '', notes: '' },
+        claimed_at: new Date().toISOString()
+      };
+      
+      const { error: insertError } = await supabase.from('tags').insert(tagPayload);
+      if (!insertError) {
+        dbSuccess = true;
+      } else {
+        console.error('Error inserting new tag:', insertError);
+        if (insertError?.code === 'PGRST205' || insertError?.message?.includes('schema')) {
+          setAuthMsg('Database tables are missing. Please run schema.sql in your Supabase SQL Editor.');
+          setAuthLoading(false);
+          return;
+        }
+      }
     }
 
-    // Move to step 3: Celebratory scannable QR layout
     setRegisteredTagId(newTagId);
     setSignUpStep(3);
     setAuthLoading(false);
   };
 
   const handleFinishOnboarding = () => {
-    window.location.reload();
+    window.location.href = '/dashboard';
   };
 
   const handleDemoBypass = () => {
@@ -211,6 +256,32 @@ export default function Dashboard() {
     }
     setSaving(false);
     navigate('/dashboard', { replace: true });
+  };
+
+  const handleReleaseTag = async () => {
+    if (!activeTagId || !formData) return;
+    if (confirm('Are you sure you want to release this tag? This will clear your parent ownership of Tag ' + activeTagId + ' and allow it to be claimed/registered again.')) {
+      setSaving(true);
+      const { error } = await supabase.from('tags').update({
+        owner_id: null,
+        child_name: '',
+        parent_whatsapp: '',
+        contacts: [],
+        medical: { allergies: '', conditions: '', notes: '' },
+        claimed_at: null
+      }).eq('tag_id', activeTagId);
+      
+      if (error) {
+        alert('Error releasing tag: ' + error.message);
+      } else {
+        setActiveTagId(null);
+        setFormData(null);
+        if (user) {
+          await fetchUserTags(user.id);
+        }
+      }
+      setSaving(false);
+    }
   };
 
   const handleSave = async () => {
@@ -440,6 +511,19 @@ export default function Dashboard() {
                     />
                   </div>
 
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">6-Character Wristband Code (Optional)</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. AB12CD (leave blank to auto-generate)" 
+                      maxLength={6}
+                      value={signupTagId}
+                      onChange={e => setSignupTagId(e.target.value.toUpperCase())}
+                      className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-sm text-[#051650] font-bold uppercase tracking-wider transition-all placeholder:normal-case placeholder:font-medium" 
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">If your wristband came with a code printed on it, enter it here to claim it.</span>
+                  </div>
+
                   <div className="flex items-start gap-3 bg-slate-50 p-3.5 border border-slate-200 rounded-2xl">
                     <input 
                       type="checkbox" 
@@ -542,48 +626,45 @@ export default function Dashboard() {
                   </div>
 
                   {/* Gorgeous printable wristband card */}
-                  <div className="p-5 bg-gradient-to-tr from-[#051650] to-[#C54B8C] rounded-3xl text-white shadow-xl relative overflow-hidden border-2 border-[#FFCFF1]/30">
+                  <div className="p-6 bg-gradient-to-tr from-[#051650] to-[#C54B8C] rounded-3xl text-white shadow-xl relative overflow-hidden border border-[#FFCFF1]/20 space-y-4">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-[#FFCFF1]/10 rounded-bl-full pointer-events-none"></div>
                     
-                    <div className="flex justify-between items-center mb-3 text-left">
+                    <div className="flex justify-between items-center text-left">
                       <div>
                         <span className="text-[9px] font-black tracking-widest uppercase text-[#FFCFF1]">Child Safety Wearable</span>
-                        <h4 className="font-extrabold text-sm flex items-center gap-1">
+                        <h4 className="font-extrabold text-base flex items-center gap-1.5 mt-0.5">
                           <span>👧</span> {childName}
                         </h4>
                       </div>
-                      <div className="bg-white/10 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider text-[#FFCFF1]">
+                      <div className="bg-white/10 px-3 py-1 rounded-full text-xs font-mono font-black uppercase tracking-wider text-[#FFCFF1] border border-white/10">
                         ID: {registeredTagId}
                       </div>
                     </div>
 
-                    {/* Scannable QR Code */}
-                    <div className="bg-white p-4 rounded-2xl inline-block shadow-lg border border-white/20 mx-auto">
-                      <img 
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(window.location.origin + '/t/' + registeredTagId)}&color=051650`}
-                        alt="Unique Child Wristband QR Code"
-                        className="w-40 h-40 object-contain mx-auto"
-                        onError={(e) => {
-                          // Fallback dynamic canvas rendering if API goes offline
-                          console.warn('QR code API error, using static fallback');
-                        }}
-                      />
-                    </div>
-
-                    <div className="mt-3 text-center">
-                      <p className="text-[10px] font-medium text-slate-200 leading-relaxed">
-                        This custom scannable code is permanently linked to <span className="font-mono bg-[#051650]/40 px-1 py-0.5 rounded text-white">{registeredTagId}</span>. Attach it to your child's wristband, schoolbag, or clothing.
+                    <div className="text-left space-y-2">
+                      <p className="text-xs text-slate-100 leading-relaxed">
+                        This physical tag is now activated with the unique code <span className="font-mono bg-[#051650] border border-[#FFCFF1]/20 px-2 py-0.5 rounded text-white font-bold">{registeredTagId}</span>. This code is permanently linked to your child's profile on this wristband.
+                      </p>
+                      <p className="text-xs text-slate-200 leading-relaxed">
+                        To test what finders see when they tap the NFC tag or scan the QR code on the wristband, you can instantly preview the public page:
                       </p>
                     </div>
+
+                    <button
+                      onClick={() => navigate('/t/' + registeredTagId)}
+                      className="w-full py-3 bg-white hover:bg-[#FFCFF1] text-[#051650] hover:text-[#C54B8C] text-xs font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 transform active:scale-95"
+                    >
+                      <span>👁️</span> View in Public (Live Emergency Profile)
+                    </button>
                   </div>
 
-                  <p className="text-xs text-slate-500 font-medium">
-                    You can print or download this QR code anytime from your dashboard. Let's configure your contact details and safety profile next!
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                    Let's configure your emergency contacts, WhatsApp alerts, and medical profile details next!
                   </p>
 
                   <button 
                     onClick={handleFinishOnboarding}
-                    className="w-full bg-[#051650] text-white p-4 rounded-xl font-bold uppercase tracking-wide hover:bg-[#0A2472] transition-colors shadow-md shadow-[#051650]/15"
+                    className="block text-center w-full bg-[#051650] text-white p-4 rounded-xl font-bold uppercase tracking-wide hover:bg-[#0A2472] transition-colors shadow-md shadow-[#051650]/15"
                   >
                     Configure Emergency Contacts & Profile →
                   </button>
@@ -606,15 +687,36 @@ export default function Dashboard() {
 
           {/* Demo Bypass button */}
           {(!isSignUp || signUpStep !== 3) && (
-            <div className="mt-6 pt-5 border-t border-slate-100 flex flex-col items-center relative z-10">
-              <span className="text-[11px] text-slate-400 mb-2.5 font-medium">Want to bypass password auth in preview?</span>
-              <button
-                type="button"
-                onClick={handleDemoBypass}
-                className="w-full py-2.5 px-4 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-sm"
-              >
-                <span>⚡</span> One-Click Demo Bypass (Instant Parent View)
-              </button>
+            <div className="mt-6 pt-5 border-t border-slate-100 flex flex-col items-center relative z-10 space-y-4 w-full">
+              <div className="text-center w-full">
+                <span className="text-[11px] text-slate-400 font-medium">Want to bypass password auth in preview?</span>
+                <button
+                  type="button"
+                  onClick={handleDemoBypass}
+                  className="w-full mt-2 py-2.5 px-4 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <span>⚡</span> One-Click Demo Bypass (Instant Parent View)
+                </button>
+              </div>
+
+              <div className="text-center w-full pt-2 border-t border-dashed border-slate-200">
+                <p className="text-[10px] text-slate-400 leading-relaxed mb-2">
+                  Supabase Auth enforces a limit of 3 signups/hour. To clear local mock data or restart testing:
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm('Are you sure you want to clear all browser cache and mock database tables? This will delete all mock profiles, registered tags, and reset the active parent session.')) {
+                      localStorage.clear();
+                      alert('System successfully reset! Redirecting to start fresh.');
+                      window.location.href = '/dashboard';
+                    }
+                  }}
+                  className="w-full py-2 px-4 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 font-semibold rounded-xl text-[11px] transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <span>🔄</span> Clear Saved Cache & Reset System
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -719,17 +821,19 @@ export default function Dashboard() {
                   </h2>
                   <p className="text-xs text-slate-500 font-mono mt-1">ID: {formData.tag_id}</p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-2.5 flex-wrap">
                   <button 
-                    onClick={() => window.open(`/t/${formData.tag_id}`, '_blank')}
-                    className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-medium transition-colors"
+                    type="button"
+                    onClick={handleReleaseTag}
+                    disabled={saving}
+                    className="px-4 py-2 text-xs font-bold bg-rose-50 border border-rose-200 text-rose-700 rounded-lg hover:bg-rose-100 transition-colors flex items-center gap-1.5 shadow-sm animate-fade-in"
                   >
-                    View Public Page
+                    🗑️ Release Tag
                   </button>
                   <button 
                     onClick={handleSave} 
                     disabled={saving} 
-                    className="px-6 py-2 bg-[#051650] text-white rounded-lg font-semibold text-sm hover:bg-[#0A2472] transition-colors"
+                    className="px-6 py-2 bg-[#051650] text-white rounded-lg font-semibold text-sm hover:bg-[#0A2472] transition-colors shadow-sm"
                   >
                     {saving ? 'Saving...' : 'Save Changes'}
                   </button>
@@ -737,6 +841,32 @@ export default function Dashboard() {
               </div>
 
               <div className="space-y-8">
+                {/* Beautiful Permanent Tag Info Card */}
+                <div className="bg-gradient-to-tr from-[#051650] to-[#C54B8C] p-6 rounded-2xl text-white shadow-md relative overflow-hidden flex flex-col sm:flex-row items-center justify-between gap-6 animate-fade-in">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-[#FFCFF1]/10 rounded-bl-full pointer-events-none"></div>
+                  <div className="space-y-2 text-center sm:text-left">
+                    <h3 className="font-extrabold text-base flex items-center justify-center sm:justify-start gap-1.5 font-serif text-[#FFCFF1]">
+                      <span>🏷️</span> Active NFC Wearable Tag
+                    </h3>
+                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                      <span className="text-xs text-slate-200">Registered Code:</span>
+                      <span className="font-mono bg-[#051650] border border-[#FFCFF1]/30 px-2.5 py-0.5 rounded-lg text-white font-extrabold text-sm tracking-wider">
+                        {formData.tag_id}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-100 leading-relaxed max-w-md">
+                      Your child's physical wristband is linked to this unique tag code. Parents can view and test the exact medical page that finders see by checking the public profile view.
+                    </p>
+                  </div>
+                  <div className="shrink-0 w-full sm:w-auto">
+                    <button
+                      onClick={() => navigate('/t/' + formData.tag_id)}
+                      className="w-full sm:w-auto px-6 py-2.5 bg-white text-[#051650] font-extrabold text-xs rounded-xl hover:bg-[#FFCFF1] hover:text-[#C54B8C] transition-all transform hover:scale-[1.02] shadow-md flex items-center justify-center gap-1.5"
+                    >
+                      👁️ View in Public
+                    </button>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                   <div className="sm:col-span-3">
                     <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Child's Name</label>

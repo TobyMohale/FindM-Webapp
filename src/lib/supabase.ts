@@ -142,44 +142,48 @@ if (hasRealSupabase && !isForcedMock()) {
         return { data: { user: currentUser || { email: 'mock@example.com' } }, error: null };
       }
     },
-    from: (table: string) => ({
-      select: () => ({
-        eq: async (col: string, val: string) => {
+    from: (table: string) => {
+      const actualTable = table === 'profiles' ? 'users' : table;
+      return {
+        select: (fieldsStr?: string) => ({
+          eq: async (col: string, val: string) => {
+            await delay();
+            const store = getStore(actualTable);
+            if (col === 'tag_id' || col === 'id') {
+              return { data: store[val] ? [store[val]] : [], error: null };
+            }
+            if (col === 'owner_id') {
+              const matches = Object.values(store).filter((t: any) => t.owner_id === val);
+              return { data: matches, error: null };
+            }
+            return { data: [], error: null };
+          }
+        }),
+        update: (payload: any) => ({
+          eq: async (col: string, val: string) => {
+            await delay();
+            const store = getStore(actualTable);
+            if ((col === 'tag_id' || col === 'id') && store[val]) {
+              store[val] = { ...store[val], ...payload };
+              setStore(actualTable, store);
+              return { data: [store[val]], error: null };
+            }
+            return { data: null, error: new Error('Record not found') };
+          }
+        }),
+        insert: async (payload: any[]) => {
           await delay();
-          const store = getStore(table);
-          if (col === 'tag_id') {
-            return { data: store[val] ? [store[val]] : [], error: null };
-          }
-          if (col === 'owner_id') {
-            const matches = Object.values(store).filter((t: any) => t.owner_id === val);
-            return { data: matches, error: null };
-          }
-          return { data: [], error: null };
+          const store = getStore(actualTable);
+          const rows = Array.isArray(payload) ? payload : [payload];
+          rows.forEach((row: any) => {
+            const key = row.tag_id || row.id;
+            store[key] = { ...row, created_at: new Date().toISOString() };
+          });
+          setStore(actualTable, store);
+          return { data: payload, error: null };
         }
-      }),
-      update: (payload: any) => ({
-        eq: async (col: string, val: string) => {
-          await delay();
-          const store = getStore(table);
-          if (col === 'tag_id' && store[val]) {
-            store[val] = { ...store[val], ...payload };
-            setStore(table, store);
-            return { data: [store[val]], error: null };
-          }
-          return { data: null, error: new Error('Record not found') };
-        }
-      }),
-      insert: async (payload: any[]) => {
-        await delay();
-        const store = getStore(table);
-        const rows = Array.isArray(payload) ? payload : [payload];
-        rows.forEach((row: any) => {
-          store[row.tag_id || row.id] = { ...row, created_at: new Date().toISOString() };
-        });
-        setStore(table, store);
-        return { data: payload, error: null };
-      }
-    }),
+      };
+    },
     rpc: async (fn: string, params: any) => {
       await delay();
       if (fn === 'generate_tag_batch') {

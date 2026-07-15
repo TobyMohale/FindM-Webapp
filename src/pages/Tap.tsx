@@ -8,8 +8,11 @@ export default function TapView() {
   const navigate = useNavigate();
   const [lang, setLang] = useState<LangCode>('en');
   const [record, setRecord] = useState<any>(null);
+  const [parentProfile, setParentProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [shareStatus, setShareStatus] = useState('');
+  const [finderAlertStatus, setFinderAlertStatus] = useState('');
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDemoFallback, setIsDemoFallback] = useState(false);
@@ -56,11 +59,22 @@ export default function TapView() {
         
         if (error) {
           console.error("Supabase fetch error:", error);
-          setErrorMsg(error.message);
+          
+          if (error?.code === 'PGRST205' || error?.message?.includes('schema')) {
+            setErrorMsg("Database tables are missing. Please run the schema.sql file in your Supabase SQL Editor to initialize the project.");
+            setRecord(null);
+            return;
+          } else {
+            setErrorMsg(error.message);
+          }
           
           if (tagId === 'demo01') {
             setRecord(demoData);
             setIsDemoFallback(true);
+            setParentProfile({
+              full_name: 'Thandeka Dlamini',
+              email: 'parent@example.com'
+            });
           } else {
             setRecord(null);
           }
@@ -71,17 +85,37 @@ export default function TapView() {
             if (tagId === 'demo01') {
               setRecord(demoData);
               setIsDemoFallback(true);
+              setParentProfile({
+                full_name: 'Thandeka Dlamini',
+                email: 'parent@example.com'
+              });
             } else {
               navigate(`/claim/${tagId}`, { replace: true });
             }
           } else {
             setRecord(tag);
+            // Fetch owner/parent profile details
+            try {
+              const { data: profileData, error: profileErr } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', tag.owner_id);
+              if (!profileErr && profileData && profileData.length > 0) {
+                setParentProfile(profileData[0]);
+              }
+            } catch (pErr) {
+              console.warn("Error fetching parent profile:", pErr);
+            }
           }
         } else {
           // No tag found in database
           if (tagId === 'demo01') {
             setRecord(demoData);
             setIsDemoFallback(true);
+            setParentProfile({
+              full_name: 'Thandeka Dlamini',
+              email: 'parent@example.com'
+            });
           } else {
             setRecord(null);
           }
@@ -92,6 +126,10 @@ export default function TapView() {
         if (tagId === 'demo01') {
           setRecord(demoData);
           setIsDemoFallback(true);
+          setParentProfile({
+            full_name: 'Thandeka Dlamini',
+            email: 'parent@example.com'
+          });
         } else {
           setRecord(null);
         }
@@ -102,8 +140,32 @@ export default function TapView() {
     fetchTag();
   }, [tagId, navigate]);
 
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setCurrentUser(user);
+      } catch (e) {
+        console.warn("Error getting current user:", e);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const getTargetWhatsapp = () => {
+    if (record?.parent_whatsapp) return record.parent_whatsapp;
+    if (record?.contacts && record.contacts.length > 0) {
+      const waContact = record.contacts.find((c: any) => c.whatsapp && c.phone);
+      if (waContact) return waContact.phone;
+      const anyContact = record.contacts.find((c: any) => c.phone);
+      if (anyContact) return anyContact.phone;
+    }
+    return null;
+  };
+
   const handleShareLocation = () => {
-    if (!record?.parent_whatsapp) {
+    const targetWa = getTargetWhatsapp();
+    if (!targetWa) {
       setShareStatus(DICTIONARY[lang].noParentPhone);
       return;
     }
@@ -121,7 +183,7 @@ export default function TapView() {
         const { latitude, longitude } = pos.coords;
         const mapsLink = `https://maps.google.com/?q=${latitude},${longitude}`;
         const msg = `${record.child_name || 'Your child'}'s safety tag was just tapped. Location: ${mapsLink} (sent ${new Date().toLocaleTimeString()})`;
-        const waLink = `https://wa.me/${cleanPhone(record.parent_whatsapp).replace('+', '')}?text=${encodeURIComponent(msg)}`;
+        const waLink = `https://wa.me/${cleanPhone(targetWa).replace('+', '')}?text=${encodeURIComponent(msg)}`;
         setShareStatus(DICTIONARY[lang].locationShared);
         window.open(waLink, '_blank');
       },
@@ -135,17 +197,22 @@ export default function TapView() {
   };
 
   const handleSimulatedLocation = (lat: number, lng: number, placeName: string) => {
-    if (!record?.parent_whatsapp) return;
+    const targetWa = getTargetWhatsapp();
+    if (!targetWa) return;
     const mapsLink = `https://maps.google.com/?q=${lat},${lng}`;
     const msg = `[Demo GPS Alert] ${record.child_name || 'Your child'}'s safety tag was just tapped. Location: ${placeName} (${mapsLink}) — sent ${new Date().toLocaleTimeString()}`;
-    const waLink = `https://wa.me/${cleanPhone(record.parent_whatsapp).replace('+', '')}?text=${encodeURIComponent(msg)}`;
+    const waLink = `https://wa.me/${cleanPhone(targetWa).replace('+', '')}?text=${encodeURIComponent(msg)}`;
     setShareStatus(`Opening WhatsApp with simulated location...`);
     window.open(waLink, '_blank');
   };
 
   const handleFinderAlertSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!record?.parent_whatsapp) return;
+    const targetWa = getTargetWhatsapp();
+    if (!targetWa) {
+      setFinderAlertStatus(DICTIONARY[lang].noParentPhone);
+      return;
+    }
     
     let msg = `🚨 *[EMERGENCY FINDER ALERT]* 🚨\n`;
     msg += `I have found your child: *${record.child_name || 'Unnamed'}*\n\n`;
@@ -162,8 +229,8 @@ export default function TapView() {
     
     msg += `\n_Sent via LoTap tags at ${new Date().toLocaleTimeString()}_`;
     
-    const waLink = `https://wa.me/${cleanPhone(record.parent_whatsapp).replace('+', '')}?text=${encodeURIComponent(msg)}`;
-    setShareStatus(`Opening WhatsApp to alert parent...`);
+    const waLink = `https://wa.me/${cleanPhone(targetWa).replace('+', '')}?text=${encodeURIComponent(msg)}`;
+    setFinderAlertStatus(`Opening WhatsApp to alert parent...`);
     window.open(waLink, '_blank');
   };
 
@@ -355,6 +422,15 @@ export default function TapView() {
 
       <div className="w-full max-w-[400px] glass-liquid-card sm:rounded-[38px] sm:shadow-2xl overflow-hidden flex flex-col relative min-h-[100dvh] sm:min-h-[750px] z-10">
         
+        {currentUser && (
+          <button 
+            onClick={() => navigate('/dashboard')}
+            className="bg-[#051650] text-[#FFCFF1] hover:bg-[#0A2472] text-[11px] uppercase tracking-wider font-extrabold text-center py-2.5 px-4 flex items-center justify-center gap-1.5 relative z-20 w-full transition-colors border-b border-[#C54B8C]/20"
+          >
+            <span>⬅️</span> Back to Parent Dashboard
+          </button>
+        )}
+
         {isDemoFallback && (
           <div className="bg-amber-500 text-white text-[10px] uppercase tracking-wider font-bold text-center py-1.5 px-4 flex items-center justify-center gap-1.5 relative z-20">
             <span>⚡</span> Running on Local Demo Fallback (No Supabase Tag Found)
@@ -392,6 +468,33 @@ export default function TapView() {
 
         {/* Info Body */}
         <div className="p-5 flex-1 flex flex-col gap-6">
+          {/* Parent/Guardian Info */}
+          {parentProfile && (
+            <div className="bg-white border border-[#DCE6F5] rounded-xl p-4 shadow-sm text-sm text-[#051650] space-y-3">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-[#C54B8C] flex items-center gap-1.5">
+                <span>🛡️</span> Registered Parent / Guardian
+              </h2>
+              <div className="space-y-2 text-xs">
+                {parentProfile.full_name && (
+                  <p className="text-slate-700 flex justify-between items-center border-b border-slate-50 pb-1.5">
+                    <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Name</span>
+                    <span className="font-semibold text-slate-800">{parentProfile.full_name}</span>
+                  </p>
+                )}
+                <p className="text-slate-700 flex justify-between items-center border-b border-slate-50 pb-1.5">
+                  <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Email</span>
+                  <a href={`mailto:${parentProfile.email}`} className="text-[#051650] hover:underline font-bold font-mono">{parentProfile.email}</a>
+                </p>
+                {record.parent_whatsapp && (
+                  <p className="text-slate-700 flex justify-between items-center pb-0.5">
+                    <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">WhatsApp/Phone</span>
+                    <a href={`tel:${cleanPhone(record.parent_whatsapp)}`} className="text-[#051650] hover:underline font-bold font-mono">{record.parent_whatsapp}</a>
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           <div>
             <h2 className="text-xs font-bold uppercase tracking-wider text-[#0A2472] mb-3">{t.emergencyContacts}</h2>
             {record.contacts && record.contacts.length > 0 ? (
@@ -476,6 +579,7 @@ export default function TapView() {
               >
                 {t.finderBtn}
               </button>
+              {finderAlertStatus && <p className="text-center text-xs text-[#C54B8C] mt-2 font-medium">{finderAlertStatus}</p>}
             </form>
           </div>
 
