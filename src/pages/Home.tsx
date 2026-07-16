@@ -8,11 +8,34 @@ export default function Home() {
   const [selectedColor, setSelectedColor] = useState('#051650');
   const [activeTab, setActiveTab] = useState<string | null>('contacts');
   const [copyStatus, setCopyStatus] = useState('Copy');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    alert('Thank you! We will be in touch soon regarding your LoTap bands.');
-    setFormData({ name: '', number: '', bands: '' });
+    setSubmitting(true);
+    setSubmitMessage('');
+
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { error } = await supabase.from('orders').insert([{
+        customer_name: formData.name,
+        customer_contact: formData.number,
+        quantity: parseInt(formData.bands) || 1,
+        status: 'pending'
+      }]);
+      
+      if (error) {
+        setSubmitMessage('Error: ' + error.message);
+      } else {
+        setSubmitMessage('Thank you! We will be in touch soon regarding your LoTap bands.');
+        setFormData({ name: '', number: '', bands: '' });
+      }
+    } catch (err: any) {
+      setSubmitMessage('Failed to submit order. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -600,11 +623,17 @@ export default function Home() {
             </div>
             
             <button 
-              type="submit" 
-              className="w-full bg-[#C54B8C] text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-[#B53389] transition-all shadow-md shadow-[#C54B8C]/15"
+              type="submit"
+              disabled={submitting} 
+              className="w-full bg-[#C54B8C] text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-[#B53389] transition-all shadow-md shadow-[#C54B8C]/15 disabled:opacity-50"
             >
-              Submit Order Inquiry
+              {submitting ? 'Submitting...' : 'Submit Order Inquiry'}
             </button>
+            {submitMessage && (
+              <div className={`p-3 rounded-lg text-xs font-bold text-center ${submitMessage.includes('Error') || submitMessage.includes('Failed') ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                {submitMessage}
+              </div>
+            )}
           </form>
         </div>
 

@@ -52,15 +52,36 @@ create table public.tags (
     claimed_at timestamp with time zone
 );
 
+-- Orders Table
+create table public.orders (
+    id uuid default gen_random_uuid() primary key,
+    customer_name text not null,
+    customer_contact text not null,
+    quantity integer not null default 1,
+    status text default 'pending' not null,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
 -- ==========================================
 -- 3. ENABLE ROW LEVEL SECURITY (RLS)
 -- ==========================================
 alter table public.profiles enable row level security;
 alter table public.tags enable row level security;
+alter table public.orders enable row level security;
 
 -- ==========================================
 -- 4. RLS POLICIES (POPIA & Access Rules)
 -- ==========================================
+
+-- Orders Policies
+create policy "Anyone can insert an order"
+    on public.orders for insert
+    with check (true);
+
+create policy "Admins can view and update orders"
+    on public.orders for all
+    using (true)
+    with check (true);
 
 -- Profiles Policies
 create policy "Users can view their own profile." 

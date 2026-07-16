@@ -29,6 +29,9 @@ export default function Admin() {
   const [editingLabels, setEditingLabels] = useState<Record<string, string>>({});
   const [savingLabels, setSavingLabels] = useState<Record<string, boolean>>({});
 
+  const [orders, setOrders] = useState<any[]>([]);
+  const [updatingOrderStatus, setUpdatingOrderStatus] = useState<Record<string, boolean>>({});
+
   useEffect(() => {
     const checkAdmin = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -42,7 +45,26 @@ export default function Admin() {
     checkAdmin();
     fetchMetrics();
     fetchTagsList();
+    fetchOrders();
   }, []);
+
+  const fetchOrders = async () => {
+    const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+    if (data) {
+      setOrders(data);
+    }
+  };
+
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    setUpdatingOrderStatus(prev => ({ ...prev, [orderId]: true }));
+    const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
+    if (!error) {
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+    } else {
+      alert('Failed to update status: ' + error.message);
+    }
+    setUpdatingOrderStatus(prev => ({ ...prev, [orderId]: false }));
+  };
 
   const handlePasscodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -317,6 +339,62 @@ export default function Admin() {
                   </tr>
                 ));
               })()}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Orders List */}
+      <div className="bg-slate-50 p-6 rounded-lg border border-slate-200 mt-6">
+        <h2 className="text-lg font-bold text-[#051650] flex items-center gap-2 mb-4">
+          <span>📦</span> Wristband Orders
+        </h2>
+        
+        <div className="overflow-x-auto bg-white rounded-lg border border-slate-200 shadow-sm max-h-[420px] overflow-y-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead className="sticky top-0 bg-slate-100 z-10 border-b border-slate-200">
+              <tr className="text-[#051650] uppercase font-bold text-[10px] tracking-wider">
+                <th className="p-3">Order Date</th>
+                <th className="p-3">Customer</th>
+                <th className="p-3">Contact</th>
+                <th className="p-3">Quantity</th>
+                <th className="p-3">Status</th>
+                <th className="p-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {orders.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
+                    No orders yet
+                  </td>
+                </tr>
+              ) : (
+                orders.map((o: any) => (
+                  <tr key={o.id} className="hover:bg-slate-50/50">
+                    <td className="p-3 text-slate-500 whitespace-nowrap">{new Date(o.created_at).toLocaleString()}</td>
+                    <td className="p-3 font-semibold text-[#051650]">{o.customer_name}</td>
+                    <td className="p-3 text-slate-600">{o.customer_contact}</td>
+                    <td className="p-3 font-mono font-bold text-[#C54B8C] text-sm">{o.quantity}</td>
+                    <td className="p-3">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${o.status === 'fulfilled' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>
+                        {o.status}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right">
+                      {o.status === 'pending' && (
+                        <button
+                          onClick={() => { triggerHaptic(); updateOrderStatus(o.id, 'fulfilled'); }}
+                          disabled={updatingOrderStatus[o.id]}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg font-bold transition-colors disabled:opacity-40 text-[10px] shadow-sm"
+                        >
+                          {updatingOrderStatus[o.id] ? 'Updating...' : 'Mark Fulfilled'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
