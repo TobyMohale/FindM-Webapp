@@ -41,7 +41,7 @@ if (hasRealSupabase && !isForcedMock()) {
 
   // Seed demo data if missing or has old default number
   const tags = getStore('tags');
-  if (!tags['demo01'] || tags['demo01'].parent_whatsapp === '+27821234567') {
+  if (!tags['demo01'] || !tags['demo02'] || tags['demo01'].parent_whatsapp === '+27821234567') {
     tags['demo01'] = {
       tag_id: 'demo01',
       owner_id: 'mock-user-1',
@@ -50,6 +50,19 @@ if (hasRealSupabase && !isForcedMock()) {
       parent_whatsapp: '',
       contacts: [{ name: 'Thandeka Dlamini', relation: 'Mom', phone: '', whatsapp: true }],
       medical: { allergies: 'Peanuts', conditions: 'Asthma', notes: '' },
+      custom_label: 'Child-1-Wristband',
+      created_at: new Date().toISOString(),
+      claimed_at: new Date().toISOString()
+    };
+    tags['demo02'] = {
+      tag_id: 'demo02',
+      owner_id: 'mock-user-1',
+      child_name: 'Emma Dlamini',
+      avatar: '👧',
+      parent_whatsapp: '',
+      contacts: [{ name: 'Thandeka Dlamini', relation: 'Mom', phone: '', whatsapp: true }],
+      medical: { allergies: 'None', conditions: 'Healthy', notes: '' },
+      custom_label: 'Child-2-Wristband',
       created_at: new Date().toISOString(),
       claimed_at: new Date().toISOString()
     };
@@ -199,7 +212,7 @@ if (hasRealSupabase && !isForcedMock()) {
         for (let i = 0; i < batchSize; i++) {
           let id = genId();
           while (store[id]) id = genId();
-          store[id] = { tag_id: id, owner_id: null, contacts: [], medical: {}, created_at: new Date().toISOString() };
+          store[id] = { tag_id: id, owner_id: null, contacts: [], medical: {}, custom_label: '', created_at: new Date().toISOString() };
           generated.push({ generated_id: id });
         }
         setStore('tags', store);

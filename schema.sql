@@ -3,6 +3,25 @@
 -- ==========================================
 create extension if not exists "uuid-ossp";
 
+-- Dynamically drop all legacy custom user-defined triggers on auth.users to ensure zero database conflicts
+do $$
+declare
+    trig record;
+begin
+    for trig in (
+        select tgname
+        from pg_trigger t
+        join pg_class c on t.tgrelid = c.oid
+        join pg_namespace n on c.relnamespace = n.oid
+        where n.nspname = 'auth' and c.relname = 'users' and not t.tgisinternal
+    ) loop
+        execute 'drop trigger if exists ' || quote_ident(trig.tgname) || ' on auth.users;';
+    end loop;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+drop function if exists public.handle_new_user();
 drop table if exists public.tags;
 drop table if exists public.profiles;
 
@@ -28,6 +47,7 @@ create table public.tags (
     parent_whatsapp text,
     contacts jsonb default '[]'::jsonb not null,
     medical jsonb default '{"allergies": "", "conditions": "", "notes": ""}'::jsonb not null,
+    custom_label text, -- Custom label assigned by administrators (e.g. 'Child-1-Wristband')
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     claimed_at timestamp with time zone
 );
@@ -82,7 +102,7 @@ begin
     new.id, 
     new.email, 
     coalesce(new.raw_user_meta_data->>'full_name', ''),
-    coalesce((new.raw_user_meta_data->>'popia_consent_accepted')::boolean, false)
+    coalesce(new.raw_user_meta_data->>'popia_consent_accepted' = 'true', false)
   );
   return new;
 end;
@@ -113,7 +133,7 @@ begin
             
             -- Check for collision, if none, break inner loop to insert
             if not exists (select 1 from public.tags where tag_id = new_id) and not (new_id = any(generated_ids)) then
-                break;
+                exit;
             end if;
         end loop;
 

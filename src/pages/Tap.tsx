@@ -3,10 +3,33 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, cleanPhone } from '../lib/supabase';
 import { DICTIONARY, LANGS, LangCode } from '../lib/dictionary';
 
+const triggerHaptic = () => {
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try {
+      navigator.vibrate(30);
+    } catch (e) {
+      // Ignored
+    }
+  }
+};
+
+const getBrowserLanguage = (): LangCode => {
+  if (typeof navigator !== 'undefined') {
+    const userLangs = navigator.languages || [navigator.language];
+    for (const userLang of userLangs) {
+      const code = userLang.split('-')[0].toLowerCase();
+      if (code === 'en' || code === 'af' || code === 'zu' || code === 'nso') {
+        return code as LangCode;
+      }
+    }
+  }
+  return 'en';
+};
+
 export default function TapView() {
   const { tagId } = useParams<{ tagId: string }>();
   const navigate = useNavigate();
-  const [lang, setLang] = useState<LangCode>('en');
+  const [lang, setLang] = useState<LangCode>(getBrowserLanguage());
   const [record, setRecord] = useState<any>(null);
   const [parentProfile, setParentProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -93,7 +116,23 @@ export default function TapView() {
               navigate(`/claim/${tagId}`, { replace: true });
             }
           } else {
-            setRecord(tag);
+            // Increment scan count and update last scanned timestamp
+            const newScanCount = (tag.scan_count || 0) + 1;
+            const now = new Date().toISOString();
+            
+            supabase.from('tags').update({
+              scan_count: newScanCount,
+              last_scanned_at: now
+            }).eq('tag_id', tag.tag_id).then(({ error }) => {
+              if (error) console.error("Error incrementing scan count:", error);
+            });
+
+            setRecord({
+              ...tag,
+              scan_count: newScanCount,
+              last_scanned_at: now
+            });
+
             // Fetch owner/parent profile details
             try {
               const { data: profileData, error: profileErr } = await supabase
@@ -101,7 +140,25 @@ export default function TapView() {
                 .select('*')
                 .eq('id', tag.owner_id);
               if (!profileErr && profileData && profileData.length > 0) {
-                setParentProfile(profileData[0]);
+                const parent = profileData[0];
+                setParentProfile(parent);
+                
+                // Trigger Resend notification in the background
+                if (parent.email) {
+                  fetch('/api/notify/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      tag_id: tag.tag_id,
+                      child_name: tag.child_name,
+                      parent_email: parent.email,
+                      scan_count: newScanCount,
+                      timestamp: now
+                    })
+                  }).then(res => res.json())
+                    .then(resData => console.log('Resend scan alert response:', resData))
+                    .catch(err => console.error('Resend scan alert error:', err));
+                }
               }
             } catch (pErr) {
               console.warn("Error fetching parent profile:", pErr);
@@ -186,6 +243,24 @@ export default function TapView() {
         const waLink = `https://wa.me/${cleanPhone(targetWa).replace('+', '')}?text=${encodeURIComponent(msg)}`;
         setShareStatus(DICTIONARY[lang].locationShared);
         window.open(waLink, '_blank');
+
+        if (parentProfile?.email) {
+          fetch('/api/notify/location', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              tag_id: record.tag_id,
+              child_name: record.child_name,
+              parent_email: parentProfile.email,
+              latitude,
+              longitude,
+              place_name: 'Live GPS Coordinates',
+              timestamp: new Date().toISOString()
+            })
+          }).then(res => res.json())
+            .then(resData => console.log('Resend location alert response:', resData))
+            .catch(err => console.error('Resend location alert error:', err));
+        }
       },
       (err) => {
         console.warn("Geolocation failed:", err);
@@ -204,6 +279,27 @@ export default function TapView() {
     const waLink = `https://wa.me/${cleanPhone(targetWa).replace('+', '')}?text=${encodeURIComponent(msg)}`;
     setShareStatus(`Opening WhatsApp with simulated location...`);
     window.open(waLink, '_blank');
+
+    if (parentProfile?.email) {
+      fetch('/api/notify/location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tag_id: record.tag_id,
+          child_name: record.child_name,
+          parent_email: parentProfile.email,
+          latitude: lat,
+          longitude: lng,
+          place_name: placeName,
+          timestamp: new Date().toISOString()
+        })
+      }).then(res => res.json())
+        .then(resData => {
+          console.log('Resend location alert response:', resData);
+          setShareStatus(`WhatsApp opened & automatic location alert email sent via Resend!`);
+        })
+        .catch(err => console.error('Resend location alert error:', err));
+    }
   };
 
   const handleFinderAlertSubmit = (e: React.FormEvent) => {
@@ -232,6 +328,29 @@ export default function TapView() {
     const waLink = `https://wa.me/${cleanPhone(targetWa).replace('+', '')}?text=${encodeURIComponent(msg)}`;
     setFinderAlertStatus(`Opening WhatsApp to alert parent...`);
     window.open(waLink, '_blank');
+
+    if (parentProfile?.email) {
+      fetch('/api/notify/finder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tag_id: record.tag_id,
+          child_name: record.child_name,
+          parent_email: parentProfile.email,
+          finder_name: finderName.trim(),
+          finder_phone: finderPhone.trim(),
+          custom_note: customNote.trim(),
+          timestamp: new Date().toISOString()
+        })
+      }).then(res => res.json())
+        .then(resData => {
+          console.log('Resend finder alert response:', resData);
+          if (resData.success && resData.sent) {
+            setFinderAlertStatus(prev => prev + " & sent an automatic email notification!");
+          }
+        })
+        .catch(err => console.error('Resend finder alert error:', err));
+    }
   };
 
   if (loading) {
@@ -424,7 +543,7 @@ export default function TapView() {
         
         {currentUser && (
           <button 
-            onClick={() => navigate('/dashboard')}
+            onClick={() => { triggerHaptic(); navigate('/dashboard'); }}
             className="bg-[#051650] text-[#FFCFF1] hover:bg-[#0A2472] text-[11px] uppercase tracking-wider font-extrabold text-center py-2.5 px-4 flex items-center justify-center gap-1.5 relative z-20 w-full transition-colors border-b border-[#C54B8C]/20"
           >
             <span>⬅️</span> Back to Parent Dashboard
@@ -454,20 +573,63 @@ export default function TapView() {
         </div>
 
         {/* Language Switcher */}
-        <div className="flex gap-2 p-4 bg-[#FFCFF1] overflow-x-auto border-b border-[#DCE6F5] hide-scrollbar">
-          {LANGS.map(l => (
-            <button 
-              key={l.code}
-              onClick={() => setLang(l.code as LangCode)}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${lang === l.code ? 'bg-[#051650] text-white shadow-sm' : 'bg-white text-[#0A2472] border border-[#DCE6F5]'}`}
-            >
-              {l.label}
-            </button>
-          ))}
+        <div className="px-4 pt-3 pb-2.5 bg-[#FFCFF1] border-b border-[#DCE6F5] flex-shrink-0">
+          <label className="block text-[10px] font-black uppercase text-[#051650] mb-1.5 opacity-80 tracking-wider">
+            🌐 {t.selectLanguage} (Auto-detected)
+          </label>
+          <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-0.5">
+            {LANGS.map(l => (
+              <button 
+                key={l.code}
+                type="button"
+                onClick={() => { triggerHaptic(); setLang(l.code as LangCode); }}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all active:scale-95 ${lang === l.code ? 'bg-[#051650] text-white shadow-md scale-105' : 'bg-white text-[#0A2472] border border-[#DCE6F5] hover:bg-slate-50'}`}
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Info Body */}
         <div className="p-5 flex-1 flex flex-col gap-6">
+          {record.emergency_mode && (
+            <div className="bg-rose-50 border-2 border-rose-500 rounded-2xl p-4 shadow-lg text-center animate-subtle-pulse relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-rose-500 animate-pulse"></div>
+              <h3 className="text-xs font-black text-rose-700 uppercase tracking-widest mb-1.5 flex items-center justify-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-rose-600 inline-block mr-1 animate-ping"></span>
+                🚨 Emergency Broadcast Active
+              </h3>
+              <p className="text-slate-600 text-xs mb-3 font-medium">
+                The parent has flagged this band as currently lost or in distress. Please tap below to call them immediately.
+              </p>
+              {record.contacts && record.contacts.length > 0 ? (
+                (() => {
+                  const firstContact = record.contacts.find((c: any) => c.phone) || record.contacts[0];
+                  if (firstContact.phone) {
+                    return (
+                      <a
+                        href={`tel:${cleanPhone(firstContact.phone)}`}
+                        onClick={triggerHaptic}
+                        className="w-full bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-sm py-3 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 transition-transform transform active:scale-95 animate-pulse"
+                      >
+                        📞 CALL EMERGENCY CONTACT ({firstContact.name})
+                      </a>
+                    );
+                  }
+                  return (
+                    <div className="text-xs text-rose-600 font-bold">
+                      No emergency phone numbers set on contacts list.
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="text-xs text-rose-600 font-bold">
+                  No emergency contacts configured yet.
+                </div>
+              )}
+            </div>
+          )}
           {/* Parent/Guardian Info */}
           {parentProfile && (
             <div className="bg-white border border-[#DCE6F5] rounded-xl p-4 shadow-sm text-sm text-[#051650] space-y-3">
@@ -506,10 +668,10 @@ export default function TapView() {
                   </div>
                   <div className="flex gap-2">
                     {c.phone && (
-                      <a href={`tel:${cleanPhone(c.phone)}`} className="w-9 h-9 rounded-full bg-[#051650] text-white flex items-center justify-center text-sm shadow-sm hover:bg-[#0A2472] transition-colors" title={t.call}>📞</a>
+                      <a href={`tel:${cleanPhone(c.phone)}`} onClick={triggerHaptic} className="w-9 h-9 rounded-full bg-[#051650] text-white flex items-center justify-center text-sm shadow-sm hover:bg-[#0A2472] transition-colors" title={t.call}>📞</a>
                     )}
                     {c.whatsapp && c.phone && (
-                      <a href={`https://wa.me/${cleanPhone(c.phone).replace('+', '')}`} target="_blank" rel="noreferrer" className="w-9 h-9 rounded-full bg-[#25D366] text-white flex items-center justify-center text-sm shadow-sm hover:bg-[#20bd5a] transition-colors" title={t.whatsapp}>💬</a>
+                      <a href={`https://wa.me/${cleanPhone(c.phone).replace('+', '')}`} onClick={triggerHaptic} target="_blank" rel="noreferrer" className="w-9 h-9 rounded-full bg-[#25D366] text-white flex items-center justify-center text-sm shadow-sm hover:bg-[#20bd5a] transition-colors" title={t.whatsapp}>💬</a>
                     )}
                   </div>
                 </div>
@@ -574,6 +736,7 @@ export default function TapView() {
 
               <button
                 type="submit"
+                onClick={triggerHaptic}
                 disabled={!finderName.trim() && !finderPhone.trim() && !customNote.trim()}
                 className="w-full mt-2 bg-[#051650] hover:bg-[#0A2472] text-white py-3 px-4 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-40"
               >
@@ -585,7 +748,7 @@ export default function TapView() {
 
           <div className="mt-auto pt-4">
             <button 
-              onClick={handleShareLocation}
+              onClick={() => { triggerHaptic(); handleShareLocation(); }}
               className="w-full bg-[#C54B8C] text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md hover:bg-[#B53389] active:scale-[0.98] transition-all"
             >
               📍 {t.shareLocation}
@@ -603,14 +766,14 @@ export default function TapView() {
                 
                 <div className="space-y-2">
                   <button
-                    onClick={() => handleSimulatedLocation(-26.1062, 28.0536, 'Sandton, Johannesburg')}
+                    onClick={() => { triggerHaptic(); handleSimulatedLocation(-26.1062, 28.0536, 'Sandton, Johannesburg'); }}
                     className="w-full py-2.5 px-3 bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-between text-[#051650] shadow-sm"
                   >
                     <span>🏙️ Send Sandton, JHB GPS link</span>
                     <span className="text-slate-400">→</span>
                   </button>
                   <button
-                    onClick={() => handleSimulatedLocation(-33.9249, 18.4241, 'Waterfront, Cape Town')}
+                    onClick={() => { triggerHaptic(); handleSimulatedLocation(-33.9249, 18.4241, 'Waterfront, Cape Town'); }}
                     className="w-full py-2.5 px-3 bg-white hover:bg-slate-50 border border-slate-200 text-xs font-bold rounded-lg transition-colors flex items-center justify-between text-[#051650] shadow-sm"
                   >
                     <span>🏖️ Send Cape Town GPS link</span>

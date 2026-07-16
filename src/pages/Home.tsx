@@ -7,6 +7,7 @@ export default function Home() {
   const [formData, setFormData] = useState({ name: '', number: '', bands: '' });
   const [selectedColor, setSelectedColor] = useState('#051650');
   const [activeTab, setActiveTab] = useState<string | null>('contacts');
+  const [copyStatus, setCopyStatus] = useState('Copy');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,7 +95,7 @@ export default function Home() {
                     name="code"
                     type="text"
                     maxLength={6}
-                    placeholder="Enter 6-char code (e.g. AB12CD)"
+                    placeholder="Enter 6-char code (e.g. demo01)"
                     className="flex-1 px-4 py-2.5 bg-white border border-[#FFCFF1] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-bold text-[#051650] uppercase placeholder:normal-case transition-all shadow-inner"
                   />
                   <button 
@@ -104,6 +105,23 @@ export default function Home() {
                     GO
                   </button>
                 </form>
+                
+                <div className="mt-3 flex items-center gap-2 animate-fade-in">
+                  <span className="text-[11px] font-bold text-slate-500">Live test code:</span>
+                  <span className="font-mono text-xs bg-[#FFCFF1]/50 text-[#C54B8C] px-2 py-0.5 rounded-md font-extrabold tracking-wider border border-[#C54B8C]/15">demo01</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText('demo01');
+                      setCopyStatus('Copied!');
+                      setTimeout(() => setCopyStatus('Copy'), 2000);
+                    }}
+                    className="text-[10px] bg-white hover:bg-[#FFCFF1]/20 text-[#051650] hover:text-[#C54B8C] px-2.5 py-1 rounded-lg transition-all font-bold flex items-center gap-1 active:scale-95 border border-slate-200 shadow-sm"
+                  >
+                    <span>{copyStatus === 'Copied!' ? '✅' : '📋'}</span>
+                    <span>{copyStatus}</span>
+                  </button>
+                </div>
               </div>
 
               {/* Arrow pointing from wavy lines placeholder to value prop quote */}
@@ -360,6 +378,19 @@ export default function Home() {
                       <h3 className="text-xl font-extrabold text-[#051650] tracking-tight">
                         My name is Emma
                       </h3>
+                      <div className="mt-1 flex items-center gap-1.5 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                        <span className="text-[9px] font-mono text-slate-500 font-bold">TAG ID: demo01</span>
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText('demo01');
+                            alert('Demo tag ID "demo01" copied to clipboard!');
+                          }}
+                          className="text-[9px] text-[#0066FF] hover:text-[#0055DD] font-black flex items-center gap-0.5"
+                          title="Copy Tag Code"
+                        >
+                          📋 COPY
+                        </button>
+                      </div>
                       <p className="text-[11px] text-slate-500 font-medium leading-relaxed mt-1.5 max-w-xs px-2">
                         I've become separated from my family at the theme park, please use this information to immediately contact them!
                       </p>

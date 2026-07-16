@@ -1,23 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
 
 export default function Layout() {
   const location = useLocation();
   const isTapView = location.pathname.startsWith('/t/');
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  useEffect(() => {
-    const checkAdmin = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user && (user.email === 'johannesburgwebstudio@gmail.com' || user.email === 'admin@lotap.co.za')) {
-        setIsAdmin(true);
-      } else {
-        setIsAdmin(false);
-      }
-    };
-    checkAdmin();
-  }, [location.pathname]);
 
   if (isTapView) {
     return <Outlet />; // Tap view has no global header to remain lightweight and distraction-free
@@ -54,11 +40,7 @@ export default function Layout() {
             >
               ABOUT
             </a>
-            {/* Playfully scratched out link from the notebook drawing */}
-            <span className="relative text-xs font-black tracking-wider uppercase text-slate-300 select-none cursor-not-allowed hidden sm:inline-block">
-              PORTAL
-              <span className="absolute inset-x-0 top-1/2 h-[3px] bg-[#C54B8C] -rotate-3 rounded opacity-70"></span>
-            </span>
+
             
             <Link 
               to="/dashboard" 
@@ -66,14 +48,12 @@ export default function Layout() {
             >
               Set Up
             </Link>
-            {isAdmin && (
-              <Link 
-                to="/admin" 
-                className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-colors ${location.pathname === '/admin' ? 'bg-[#FFCFF1] text-[#C54B8C]' : 'text-[#0A2472] hover:bg-slate-100'}`}
-              >
-                Admin
-              </Link>
-            )}
+            <Link 
+              to="/admin" 
+              className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-colors ${location.pathname === '/admin' ? 'bg-[#FFCFF1] text-[#C54B8C]' : 'text-blue-600 hover:bg-blue-50'}`}
+            >
+              Admin
+            </Link>
           </nav>
         </div>
       </header>

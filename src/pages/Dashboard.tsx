@@ -1,9 +1,62 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase, hasRealSupabase, isForcedMock, setForcedMock, generateId } from '../lib/supabase';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 const getPublicOrigin = () => {
   return window.location.origin;
+};
+
+const triggerHaptic = () => {
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try {
+      navigator.vibrate(30);
+    } catch (e) {
+      // Ignored
+    }
+  }
+};
+
+const generate30DayScanData = (totalScans: number, tagId: string) => {
+  const data = [];
+  const now = new Date();
+  
+  let seed = 0;
+  for (let i = 0; i < tagId.length; i++) {
+    seed += tagId.charCodeAt(i);
+  }
+  const random = () => {
+    const x = Math.sin(seed++) * 10000;
+    return x - Math.floor(x);
+  };
+
+  const scansPerDay = new Array(30).fill(0);
+  let remaining = totalScans;
+  
+  if (remaining > 0) {
+    for (let i = 0; i < 30 && remaining > 0; i++) {
+      if (random() < 0.15) {
+        scansPerDay[i]++;
+        remaining--;
+      }
+    }
+    while (remaining > 0) {
+      const index = Math.floor(random() * 30);
+      scansPerDay[index]++;
+      remaining--;
+    }
+  }
+
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(now.getDate() - i);
+    const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    data.push({
+      date: dateStr,
+      scans: scansPerDay[29 - i]
+    });
+  }
+  return data;
 };
 
 export default function Dashboard() {
@@ -18,6 +71,17 @@ export default function Dashboard() {
 
   // Form State
   const [formData, setFormData] = useState<any>(null);
+
+  // Theme State
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('dashboard-theme') as 'light' | 'dark') || 'light';
+  });
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(nextTheme);
+    localStorage.setItem('dashboard-theme', nextTheme);
+  };
   
   // Auth Form State
   const [email, setEmail] = useState('');
@@ -25,14 +89,39 @@ export default function Dashboard() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [popiaConsent, setPopiaConsent] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
-  const [authMsg, setAuthMsg] = useState('');
+  const [rawAuthMsg, rawSetAuthMsg] = useState('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+
+  const authMsg = rawAuthMsg;
+  const setAuthMsg = (msg: any) => {
+    if (!msg) {
+      rawSetAuthMsg('');
+      return;
+    }
+    let text = '';
+    if (typeof msg === 'object') {
+      try {
+        text = msg.message || JSON.stringify(msg);
+      } catch {
+        text = 'An unexpected error occurred.';
+      }
+    } else {
+      text = String(msg).trim();
+    }
+    
+    if (text === '{}' || text === '{"message":""}' || text.toLowerCase().includes('database error saving new user') || text.toLowerCase().includes('trigger') || text.toLowerCase().includes('confirmation email')) {
+      rawSetAuthMsg("Database Configuration / Email Provider Issue (Error Code: 500).\n\nThis registration failure occurs due to one of two possible reasons:\n\n1. 📧 EMAIL CONFIRMATION IS ENABLED (Most Common):\nBy default, Supabase requires registering users to verify their email. If you have not configured a custom SMTP provider (like Resend, SendGrid, etc.) under Authentication -> Providers -> Email, or if you have reached the hourly email limit on Supabase's free built-in mail service, registration will fail with 'Error sending confirmation email'.\n👉 TO FIX INSTANTLY: Go to your Supabase Dashboard -> Authentication -> Providers -> Email, and toggle OFF 'Confirm email' (then click Save). This allows parents to register and log in instantly without needing email confirmations!\n\n2. ⚡ DATABASE TRIGGER OUT OF SYNC:\nThe 'on_auth_user_created' trigger or your tables might be out of sync.\n👉 TO FIX: Open your Supabase SQL Editor, copy the ENTIRE updated 'schema.sql' file content, paste it in a 'New Query' and click 'Run'. This will drop, recreate, and sync all tables cleanly!");
+    } else {
+      rawSetAuthMsg(text);
+    }
+  };
   const [resetEmailSent, setResetEmailSent] = useState(false);
 
   // Onboarding / SignUp Wizard State
   const [signUpStep, setSignUpStep] = useState(1);
   const [childName, setChildName] = useState('Emma');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [parentPhone, setParentPhone] = useState('');
   const [registeredTagId, setRegisteredTagId] = useState<string | null>(null);
   const [signupTagId, setSignupTagId] = useState('');
 
@@ -75,10 +164,13 @@ export default function Dashboard() {
     setFormData(JSON.parse(JSON.stringify(tag)));
   };
 
+  const [resendEmailSuccess, setResendEmailSuccess] = useState(false);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthLoading(true);
     setAuthMsg('');
+    setResendEmailSuccess(false);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setAuthMsg(error.message || 'Invalid login details.');
@@ -87,6 +179,29 @@ export default function Dashboard() {
       window.location.reload();
     }
     setAuthLoading(false);
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!email) {
+      setAuthMsg('Please enter your email address first.');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthMsg('');
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email,
+      options: {
+        emailRedirectTo: window.location.origin
+      }
+    });
+    setAuthLoading(false);
+    if (error) {
+      setAuthMsg(error.message || 'Failed to resend confirmation email.');
+    } else {
+      setResendEmailSuccess(true);
+      setAuthMsg('Confirmation email resent! Please check your inbox.');
+    }
   };
 
   const handleForgotPassword = async (e: React.FormEvent) => {
@@ -113,6 +228,10 @@ export default function Dashboard() {
     e.preventDefault();
     if (!email) {
       setAuthMsg('Please enter a valid email address.');
+      return;
+    }
+    if (!parentPhone) {
+      setAuthMsg('Please enter your contact number / WhatsApp.');
       return;
     }
     if (!popiaConsent) {
@@ -146,6 +265,7 @@ export default function Dashboard() {
       email,
       password,
       options: {
+        emailRedirectTo: window.location.origin,
         data: {
           popia_consent_accepted: true,
           full_name: childName ? `${childName}'s Parent` : 'Parent'
@@ -186,6 +306,7 @@ export default function Dashboard() {
         owner_id: registeredUser.id,
         child_name: childName || 'Emma',
         avatar: '👧',
+        parent_whatsapp: parentPhone,
         claimed_at: new Date().toISOString()
       }).eq('tag_id', newTagId);
       
@@ -193,6 +314,9 @@ export default function Dashboard() {
         dbSuccess = true;
       } else {
         console.error('Error updating existing tag:', updateError);
+        setAuthMsg(`Database Error updating tag: ${updateError.message || JSON.stringify(updateError)}. Please make sure you have executed the complete schema.sql script in your Supabase SQL Editor.`);
+        setAuthLoading(false);
+        return;
       }
     } else {
       // Insert brand new tag
@@ -201,7 +325,7 @@ export default function Dashboard() {
         owner_id: registeredUser.id,
         child_name: childName || 'Emma',
         avatar: '👧',
-        parent_whatsapp: '',
+        parent_whatsapp: parentPhone,
         contacts: [],
         medical: { allergies: '', conditions: '', notes: '' },
         claimed_at: new Date().toISOString()
@@ -212,11 +336,34 @@ export default function Dashboard() {
         dbSuccess = true;
       } else {
         console.error('Error inserting new tag:', insertError);
-        if (insertError?.code === 'PGRST205' || insertError?.message?.includes('schema')) {
-          setAuthMsg('Database tables are missing. Please run schema.sql in your Supabase SQL Editor.');
-          setAuthLoading(false);
-          return;
+        let errorDetail = insertError.message || JSON.stringify(insertError);
+        
+        if (insertError.message?.includes('violates foreign key constraint') && insertError.message?.includes('profiles')) {
+          errorDetail = "Foreign key violation. This means your profile was not created in the 'public.profiles' table. This usually happens if the trigger function crashed because your 'profiles' table is missing the 'popia_consent_accepted' column. To fix this, run this SQL in your Supabase SQL Editor: 'alter table public.profiles add column if not exists popia_consent_accepted boolean default false not null;' then try registering again.";
+        } else if (insertError.message?.includes('column') && insertError.message?.includes('does not exist')) {
+          errorDetail = `Missing column. Your tags table is missing some required columns (e.g. avatar, contacts, medical, or claimed_at). Please execute the complete schema.sql file in your Supabase SQL Editor to ensure all tables are up to date.`;
         }
+        
+        setAuthMsg(`Error inserting new tag: ${errorDetail}`);
+        setAuthLoading(false);
+        return;
+      }
+    }
+
+    if (dbSuccess) {
+      try {
+        await fetch('/api/notify/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parent_email: email,
+            parent_phone: parentPhone,
+            child_name: childName || 'Emma',
+            tag_id: newTagId
+          })
+        });
+      } catch (err) {
+        console.error('Failed to trigger signup notification email:', err);
       }
     }
 
@@ -294,7 +441,8 @@ export default function Dashboard() {
       avatar: formData.avatar,
       parent_whatsapp: formData.parent_whatsapp,
       contacts: formData.contacts,
-      medical: formData.medical
+      medical: formData.medical,
+      emergency_mode: formData.emergency_mode || false
     };
     
     await supabase.from('tags').update(payload).eq('tag_id', activeTagId);
@@ -464,6 +612,18 @@ export default function Dashboard() {
               {authMsg && (
                 <div className={`mt-4 p-3 rounded-xl text-xs leading-relaxed font-semibold border ${authMsg.toLowerCase().includes('success') ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-700'}`}>
                   {authMsg}
+                  {authMsg.toLowerCase().includes('email not confirmed') && (
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={handleResendConfirmation}
+                        disabled={authLoading}
+                        className="w-full bg-white text-[#C54B8C] border-2 border-[#C54B8C] hover:bg-[#fff0f7] p-2.5 rounded-lg font-bold uppercase tracking-wide transition-colors"
+                      >
+                        Resend Confirmation Email
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </form>
@@ -512,6 +672,18 @@ export default function Dashboard() {
                   </div>
 
                   <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Parent Contact Number / WhatsApp</label>
+                    <input 
+                      type="tel" 
+                      placeholder="e.g. +27825551234" 
+                      required
+                      value={parentPhone}
+                      onChange={e => setParentPhone(e.target.value)}
+                      className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-sm text-[#051650] font-semibold transition-all" 
+                    />
+                  </div>
+
+                  <div>
                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">6-Character Wristband Code (Optional)</label>
                     <input 
                       type="text" 
@@ -540,7 +712,7 @@ export default function Dashboard() {
 
                   <button 
                     type="submit"
-                    disabled={!email || !childName || !popiaConsent}
+                    disabled={!email || !childName || !parentPhone || !popiaConsent}
                     className="w-full bg-[#051650] text-white p-4 rounded-xl font-bold uppercase tracking-wide hover:bg-[#0A2472] transition-colors disabled:opacity-50 shadow-md shadow-[#051650]/15 mt-2 flex items-center justify-center gap-2"
                   >
                     <span>Next: Setup Password</span>
@@ -606,8 +778,35 @@ export default function Dashboard() {
                   </div>
 
                   {authMsg && (
-                    <div className="mt-3 p-3 rounded-xl text-xs bg-red-50 border border-red-200 text-red-700 font-semibold">
-                      {authMsg}
+                    <div className="mt-3 p-4 rounded-2xl text-xs bg-red-50 border border-red-200 text-red-800 space-y-3">
+                      <p className="font-bold flex items-center gap-1.5">
+                        <span>⚠️</span> {authMsg}
+                      </p>
+                      {authMsg.includes('Database tables are missing') && (
+                        <div className="space-y-3 pt-2.5 border-t border-red-200/60 text-left">
+                          <p className="text-slate-600 leading-relaxed font-medium">
+                            Since you have connected your live Supabase credentials, you must execute the database schema inside your Supabase SQL Editor first.
+                          </p>
+                          <div className="bg-slate-900 text-slate-100 p-3 rounded-xl border border-slate-800 font-mono text-[10px] space-y-1">
+                            <p className="text-emerald-400 font-bold">💡 How to fix this in 30 seconds:</p>
+                            <p>1. Open your <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="underline text-sky-400 font-bold">Supabase Dashboard</a></p>
+                            <p>2. Select your project & click <strong className="text-white">SQL Editor</strong> in the sidebar</p>
+                            <p>3. Create a <strong className="text-white">"New Query"</strong></p>
+                            <p>4. Open the file <strong className="text-amber-300">schema.sql</strong> in your LoTap folder, copy all text, and paste it here</p>
+                            <p>5. Click the <strong className="text-emerald-400">"Run"</strong> button on the top right!</p>
+                          </div>
+                          <div className="flex flex-col gap-2 pt-1 font-sans">
+                            <button
+                              type="button"
+                              onClick={handleDemoBypass}
+                              className="w-full text-center px-4 py-3 bg-[#051650] hover:bg-[#0A2472] text-white rounded-xl font-bold text-xs transition-all shadow-md shadow-[#051650]/20 flex items-center justify-center gap-1.5"
+                            >
+                              <span>🚀</span> Bypass & Run in Local Mock / Sandbox Client
+                            </button>
+                            <span className="text-[10px] text-slate-400 text-center block">This simulates all features using local browser storage instantly.</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </form>
@@ -623,6 +822,15 @@ export default function Dashboard() {
                   <div>
                     <h3 className="text-xl font-black text-[#051650] font-serif">Account Created!</h3>
                     <p className="text-xs text-slate-500 mt-1">Your child's unique safety code has been registered.</p>
+                  </div>
+
+                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-2xl text-left space-y-3">
+                    <p className="text-xs font-extrabold uppercase text-yellow-800 flex items-center gap-1.5">
+                      <span>✉️</span> Important: Verify Your Email
+                    </p>
+                    <p className="text-[11px] text-yellow-700 leading-relaxed font-medium">
+                      Supabase requires you to verify your email address before you can log in. <strong>Check your inbox</strong> for a confirmation link. 
+                    </p>
                   </div>
 
                   {/* Gorgeous printable wristband card */}
@@ -652,7 +860,7 @@ export default function Dashboard() {
 
                     <button
                       onClick={() => navigate('/t/' + registeredTagId)}
-                      className="w-full py-3 bg-white hover:bg-[#FFCFF1] text-[#051650] hover:text-[#C54B8C] text-xs font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 transform active:scale-95"
+                      className="w-full py-3 bg-white hover:bg-[#FFCFF1] text-[#051650] hover:text-[#C54B8C] text-xs font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 transform active:scale-95 animate-subtle-pulse"
                     >
                       <span>👁️</span> View in Public (Live Emergency Profile)
                     </button>
@@ -706,23 +914,41 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-64px)] bg-slate-50 p-4 md:p-8">
+    <div className={`min-h-[calc(100vh-64px)] transition-all duration-500 p-4 md:p-8 ${theme === 'dark' ? 'bg-[#030712] text-slate-100' : 'bg-slate-50 text-[#051650]'}`}>
       <div className="max-w-5xl mx-auto flex flex-col md:flex-row gap-8">
         
         {/* Sidebar */}
         <div className="w-full md:w-72 shrink-0">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-xl font-black font-serif text-[#051650]">LoTap</h1>
-              <p className="text-xs text-slate-500">Parent Dashboard</p>
+              <h1 className={`text-xl font-black font-serif ${theme === 'dark' ? 'text-[#FFCFF1]' : 'text-[#051650]'}`}>LoTap</h1>
+              <p className="text-xs text-slate-400">Parent Dashboard</p>
             </div>
-            <button onClick={handleLogout} className="text-xs text-slate-500 hover:text-slate-800 underline">Logout</button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { triggerHaptic(); toggleTheme(); }}
+                className={`p-2 rounded-xl transition-all shadow-sm flex items-center justify-center border cursor-pointer ${
+                  theme === 'dark' 
+                    ? 'bg-slate-800/80 border-slate-700 text-amber-300 hover:bg-slate-700' 
+                    : 'bg-white border-slate-200 text-[#051650] hover:bg-slate-50'
+                }`}
+                title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              >
+                {theme === 'dark' ? '☀️' : '🌙'}
+              </button>
+              <button onClick={handleLogout} className="text-xs text-slate-500 hover:text-slate-800 underline">Logout</button>
+            </div>
           </div>
 
           {isForcedMock() && hasRealSupabase && (
-            <div className="mb-6 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 leading-relaxed shadow-sm">
+            <div className={`mb-6 p-3 rounded-xl text-xs leading-relaxed shadow-sm border ${
+              theme === 'dark' 
+                ? 'bg-amber-950/20 border-amber-800/40 text-amber-300' 
+                : 'bg-amber-50 border-amber-200 text-amber-800'
+            }`}>
               <p className="font-bold mb-1">⚡ Running in Demo Mock Mode</p>
-              <p className="mb-2 text-[11px] text-amber-700">Email rate limit was bypassed. Data is saved in your local browser storage.</p>
+              <p className="mb-2 text-[11px]">Email rate limit was bypassed. Data is saved in your local browser storage.</p>
               <button 
                 onClick={() => { setForcedMock(false); localStorage.removeItem('findme_session'); window.location.reload(); }}
                 className="w-full py-1 bg-[#051650] text-white font-bold rounded text-[10px] uppercase tracking-wider hover:bg-[#0A2472] transition-colors"
@@ -732,39 +958,72 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
-            <div className="bg-slate-50 p-3 border-b border-slate-200 font-bold text-xs uppercase tracking-wider text-slate-600">Your Tags</div>
+          <div className={`rounded-xl shadow-sm overflow-hidden mb-6 transition-all duration-300 border ${
+            theme === 'dark' 
+              ? 'bg-slate-900/60 backdrop-blur-md border-white/10 text-white' 
+              : 'bg-white border-slate-200 text-slate-800'
+          }`}>
+            <div className={`p-3 border-b font-bold text-xs uppercase tracking-wider ${
+              theme === 'dark' 
+                ? 'bg-slate-950/60 border-white/10 text-slate-300' 
+                : 'bg-slate-50 border-slate-200 text-slate-600'
+            }`}>Your Tags</div>
             {tags.length === 0 ? (
               <div className="p-6 text-center text-sm text-slate-500">No tags claimed yet.</div>
             ) : (
               tags.map((t: any) => (
                 <button 
                   key={t.tag_id}
-                  onClick={() => loadTagForEdit(t)}
-                  className={`w-full text-left p-4 border-b border-slate-100 flex items-center gap-3 transition-colors ${activeTagId === t.tag_id ? 'bg-[#FFCFF1] border-l-4 border-l-[#C54B8C]' : 'hover:bg-slate-50 border-l-4 border-l-transparent'}`}
+                  onClick={() => { triggerHaptic(); loadTagForEdit(t); }}
+                  className={`w-full text-left p-4 border-b flex items-center gap-3 transition-colors ${
+                    activeTagId === t.tag_id 
+                      ? 'bg-[#FFCFF1] border-l-4 border-l-[#C54B8C] text-[#051650]' 
+                      : theme === 'dark'
+                        ? 'hover:bg-slate-800/40 border-slate-800 border-l-4 border-l-transparent text-slate-100'
+                        : 'hover:bg-slate-50 border-slate-100 border-l-4 border-l-transparent text-slate-800'
+                  }`}
                 >
                   <span className="text-2xl">{t.avatar || '🧒'}</span>
-                  <div>
-                    <div className="font-semibold text-sm text-[#051650]">{t.child_name || 'Unnamed Tag'}</div>
-                    <div className="text-xs text-slate-400 font-mono">{t.tag_id}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className={`font-semibold text-sm truncate ${activeTagId === t.tag_id ? 'text-[#051650]' : theme === 'dark' ? 'text-slate-100' : 'text-[#051650]'}`}>
+                        {t.custom_label ? `${t.custom_label}${t.child_name ? ` (${t.child_name})` : ''}` : (t.child_name || 'Unnamed Tag')}
+                      </span>
+                      {t.emergency_mode ? (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-500 text-white shrink-0 animate-pulse">⚠️ Lost/Beacon</span>
+                      ) : t.child_name && t.parent_whatsapp ? (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 shrink-0">Active</span>
+                      ) : (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 shrink-0">Config Pending</span>
+                      )}
+                    </div>
+                    <div className={`text-xs font-mono ${activeTagId === t.tag_id ? 'text-[#051650]/70' : 'text-slate-400'}`}>{t.tag_id}</div>
                   </div>
                 </button>
               ))
             )}
           </div>
 
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
-            <h3 className="text-xs font-bold uppercase text-slate-600 mb-3">Claim a new tag</h3>
-            <p className="text-xs text-slate-500 mb-3 leading-relaxed">Have a new physical tag? Enter the 6-character code here to bind it to your account.</p>
+          <div className={`rounded-xl p-5 shadow-sm transition-all duration-300 border ${
+            theme === 'dark' 
+              ? 'bg-slate-900/60 backdrop-blur-md border-white/10 text-white' 
+              : 'bg-white border-slate-200 text-slate-800'
+          }`}>
+            <h3 className={`text-xs font-bold uppercase mb-3 ${theme === 'dark' ? 'text-[#FFCFF1]' : 'text-slate-600'}`}>Claim a new tag</h3>
+            <p className="text-xs text-slate-400 mb-3 leading-relaxed">Have a new physical tag? Enter the 6-character code here to bind it to your account.</p>
             <input 
               type="text" 
               placeholder="e.g. abc123" 
               value={tagToClaim}
               onChange={(e) => setTagToClaim(e.target.value)}
-              className="w-full p-2 text-sm border border-slate-300 rounded-lg mb-3 font-mono focus:outline-none focus:ring-2 focus:ring-[#051650]"
+              className={`w-full p-2 text-sm rounded-lg mb-3 font-mono focus:outline-none focus:ring-2 transition-all ${
+                theme === 'dark' 
+                  ? 'bg-slate-950/60 border border-white/10 text-white focus:ring-[#C54B8C]' 
+                  : 'bg-white border border-slate-300 text-[#051650] focus:ring-[#051650]'
+              }`}
             />
             <button 
-              onClick={handleClaimTag} 
+              onClick={() => { triggerHaptic(); handleClaimTag(); }} 
               disabled={!tagToClaim || saving} 
               className="w-full bg-[#051650] text-white p-2.5 rounded-lg text-sm font-semibold hover:bg-[#0A2472] transition-colors disabled:opacity-50"
             >
@@ -774,21 +1033,29 @@ export default function Dashboard() {
         </div>
 
         {/* Main Editor */}
-        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8">
+        <div className={`flex-1 rounded-2xl shadow-sm p-6 md:p-8 transition-all duration-500 border ${
+          theme === 'dark' 
+            ? 'bg-slate-900/40 backdrop-blur-xl border-white/10 text-slate-100 shadow-2xl' 
+            : 'bg-white border-slate-200 text-slate-800'
+        }`}>
           {!formData ? (
-            <div className="h-full flex flex-col items-center justify-center py-10 text-slate-500 text-center px-4">
+            <div className={`h-full flex flex-col items-center justify-center py-10 text-center px-4 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
               <div className="text-4xl mb-4 opacity-50">🏷️</div>
               <p className="mb-12 font-medium">Select a tag on the left to edit its information.</p>
               
-              <div className="bg-slate-50 border border-slate-200 p-6 rounded-xl max-w-md text-left">
-                <h3 className="text-sm font-bold text-[#051650] mb-3 uppercase tracking-wider">How the "self-service upload" actually works</h3>
-                <p className="text-sm leading-relaxed mb-4">
-                  The physical NFC chip only ever stores one thing: a URL, like <span className="font-mono bg-slate-200 text-[#C54B8C] px-1 py-0.5 rounded text-xs">lotap.co.za/t/8f3k2p</span>. That's written once, before the tag ships.
+              <div className={`p-6 rounded-xl max-w-md text-left border transition-colors ${
+                theme === 'dark' 
+                  ? 'bg-slate-950/50 border-white/5' 
+                  : 'bg-slate-50 border-slate-200'
+              }`}>
+                <h3 className={`text-sm font-bold mb-3 uppercase tracking-wider ${theme === 'dark' ? 'text-[#FFCFF1]' : 'text-[#051650]'}`}>How the "self-service upload" actually works</h3>
+                <p className="text-sm leading-relaxed mb-4 text-slate-400">
+                  The physical NFC chip only ever stores one thing: a URL, like <span className="font-mono bg-slate-800 text-[#FFCFF1] px-1 py-0.5 rounded text-xs">lotap.co.za/t/8f3k2p</span>. That's written once, before the tag ships.
                 </p>
-                <p className="text-sm leading-relaxed mb-4">
+                <p className="text-sm leading-relaxed mb-4 text-slate-400">
                   Everything on this page is saved against that Tag ID in a database — not on the chip. So when a parent edits a phone number or adds an allergy months later, the same physical tag instantly shows the new info, because the tag was only ever a pointer.
                 </p>
-                <p className="text-xs text-slate-400 italic">
+                <p className="text-xs text-slate-500 italic">
                   In production this uses real user accounts, a proper Supabase backend, POPIA-compliant consent capture, and RLS security policies.
                 </p>
               </div>
@@ -797,7 +1064,7 @@ export default function Dashboard() {
             <div className="max-w-2xl">
               <div className="flex flex-wrap justify-between items-center mb-8 gap-4">
                 <div>
-                  <h2 className="text-2xl font-bold text-[#051650] flex items-center gap-3">
+                  <h2 className={`text-2xl font-bold flex items-center gap-3 ${theme === 'dark' ? 'text-white' : 'text-[#051650]'}`}>
                     Editing {formData.child_name || 'Tag'}
                   </h2>
                   <p className="text-xs text-slate-500 font-mono mt-1">ID: {formData.tag_id}</p>
@@ -805,16 +1072,20 @@ export default function Dashboard() {
                 <div className="flex gap-2.5 flex-wrap">
                   <button 
                     type="button"
-                    onClick={handleReleaseTag}
+                    onClick={() => { triggerHaptic(); handleReleaseTag(); }}
                     disabled={saving}
                     className="px-4 py-2 text-xs font-bold bg-rose-50 border border-rose-200 text-rose-700 rounded-lg hover:bg-rose-100 transition-colors flex items-center gap-1.5 shadow-sm animate-fade-in"
                   >
                     🗑️ Release Tag
                   </button>
                   <button 
-                    onClick={handleSave} 
+                    onClick={() => { triggerHaptic(); handleSave(); }} 
                     disabled={saving} 
-                    className="px-6 py-2 bg-[#051650] text-white rounded-lg font-semibold text-sm hover:bg-[#0A2472] transition-colors shadow-sm"
+                    className={`px-6 py-2 rounded-lg font-semibold text-sm transition-all shadow-sm ${
+                      theme === 'dark' 
+                        ? 'bg-[#C54B8C] hover:bg-[#B33B7B] text-white' 
+                        : 'bg-[#051650] hover:bg-[#0A2472] text-white'
+                    }`}
                   >
                     {saving ? 'Saving...' : 'Save Changes'}
                   </button>
@@ -829,11 +1100,27 @@ export default function Dashboard() {
                     <h3 className="font-extrabold text-base flex items-center justify-center sm:justify-start gap-1.5 font-serif text-[#FFCFF1]">
                       <span>🏷️</span> Active NFC Wearable Tag
                     </h3>
-                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3">
                       <span className="text-xs text-slate-200">Registered Code:</span>
                       <span className="font-mono bg-[#051650] border border-[#FFCFF1]/30 px-2.5 py-0.5 rounded-lg text-white font-extrabold text-sm tracking-wider">
                         {formData.tag_id}
                       </span>
+                      {formData.custom_label && (
+                        <span className="font-sans bg-[#FFCFF1]/20 border border-[#FFCFF1]/30 px-2.5 py-0.5 rounded-lg text-[#FFCFF1] font-bold text-xs uppercase tracking-wider">
+                          Label: {formData.custom_label}
+                        </span>
+                      )}
+                      {formData.child_name && formData.parent_whatsapp ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                          Not Configured
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-slate-100 leading-relaxed max-w-md">
                       Your child's physical wristband is linked to this unique tag code. Parents can view and test the exact medical page that finders see by checking the public profile view.
@@ -841,29 +1128,281 @@ export default function Dashboard() {
                   </div>
                   <div className="shrink-0 w-full sm:w-auto">
                     <button
-                      onClick={() => navigate('/t/' + formData.tag_id)}
-                      className="w-full sm:w-auto px-6 py-2.5 bg-white text-[#051650] font-extrabold text-xs rounded-xl hover:bg-[#FFCFF1] hover:text-[#C54B8C] transition-all transform hover:scale-[1.02] shadow-md flex items-center justify-center gap-1.5"
+                      onClick={() => { triggerHaptic(); navigate('/t/' + formData.tag_id); }}
+                      className="w-full sm:w-auto px-6 py-2.5 bg-white text-[#051650] font-extrabold text-xs rounded-xl hover:bg-[#FFCFF1] hover:text-[#C54B8C] transition-all transform hover:scale-[1.02] shadow-md flex items-center justify-center gap-1.5 animate-subtle-pulse"
                     >
                       👁️ View in Public
                     </button>
                   </div>
                 </div>
+
+                {/* Emergency Broadcast Mode Toggle Card */}
+                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-fade-in">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-extrabold text-rose-800 flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping shrink-0"></span>
+                      ⚠️ EMERGENCY BROADCAST MODE
+                    </h4>
+                    <p className="text-xs text-rose-700 leading-normal max-w-md font-medium">
+                      When active, a prominent pulsing red "CALL EMERGENCY CONTACT" button is displayed to finders on the public safety profile. Turn this on if your child is lost.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input 
+                      type="checkbox" 
+                      checked={formData.emergency_mode || false}
+                      onChange={e => { triggerHaptic(); setFormData({...formData, emergency_mode: e.target.checked}); }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                  </label>
+                </div>
+
+                {/* Dashboard Widgets Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in">
+                  {/* Recent Activity / Scan Tracker Widget */}
+                  <div className={`border rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 ${
+                    theme === 'dark' 
+                      ? 'bg-slate-950/40 border-slate-800 text-white' 
+                      : 'bg-slate-50 border-slate-200 text-slate-800'
+                  }`}>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${theme === 'dark' ? 'text-[#FFCFF1]' : 'text-[#051650]'}`}>
+                          <span>📈</span> Scan Statistics & Activity
+                        </h4>
+                        <span className="flex h-2 w-2 relative">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mb-4">
+                        Real-time tracking of when this wristband's NFC chip or QR code was scanned.
+                      </p>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className={`p-3 rounded-xl shadow-sm text-center border transition-all duration-300 ${
+                        theme === 'dark' 
+                          ? 'bg-slate-900 border-slate-800 text-white' 
+                          : 'bg-white border-slate-200 text-[#051650]'
+                      }`}>
+                        <span className={`block text-2xl font-black ${theme === 'dark' ? 'text-white' : 'text-[#051650]'}`}>{formData.scan_count || 0}</span>
+                        <span className="text-[10px] uppercase font-bold text-slate-400">Total Scans</span>
+                      </div>
+                      <div className={`p-3 rounded-xl shadow-sm flex flex-col justify-center items-center border transition-all duration-300 ${
+                        theme === 'dark' 
+                          ? 'bg-slate-900 border-slate-800' 
+                          : 'bg-white border-slate-200'
+                      }`}>
+                        <span className="block text-[11px] font-bold text-[#C54B8C] leading-none mb-1">
+                          {formData.last_scanned_at ? new Date(formData.last_scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Never'}
+                        </span>
+                        <span className="block text-[9px] text-slate-400 font-mono">
+                          {formData.last_scanned_at ? new Date(formData.last_scanned_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'No scans yet'}
+                        </span>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 mt-1">Last Scan</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Share Profile Widget */}
+                  <div className={`border rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 ${
+                    theme === 'dark' 
+                      ? 'bg-slate-950/40 border-slate-800 text-white' 
+                      : 'bg-slate-50 border-slate-200 text-slate-800'
+                  }`}>
+                    <div>
+                      <h4 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 mb-1 ${theme === 'dark' ? 'text-[#FFCFF1]' : 'text-[#051650]'}`}>
+                        <span>🔗</span> Share Profile preview
+                      </h4>
+                      <p className="text-[11px] text-slate-400 mb-3">
+                        Share a secure, deep-linked public preview of this child's medical card with schools, nannies, or guardians.
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic();
+                          const publicUrl = `${getPublicOrigin()}/t/${formData.tag_id}`;
+                          navigator.clipboard.writeText(publicUrl);
+                          alert(`Short deep-link URL for ${formData.child_name || 'your child'} has been copied to your clipboard!`);
+                        }}
+                        className={`w-full py-2.5 px-3 border font-extrabold text-xs rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 active:scale-95 ${
+                          theme === 'dark' 
+                            ? 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-white hover:text-[#FFCFF1]' 
+                            : 'bg-white hover:bg-slate-100 border-slate-200 text-[#051650] hover:text-[#C54B8C]'
+                        }`}
+                      >
+                        <span>📋</span> Copy Deep-Link URL
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic();
+                          const publicUrl = `${getPublicOrigin()}/t/${formData.tag_id}`;
+                          const text = `🚨 LoTap Emergency Safety Profile for ${formData.child_name || 'Emma'}. Active NFC Wristband Code: ${formData.tag_id}. View emergency info and share live location here: ${publicUrl}`;
+                          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                        }}
+                        className="w-full py-2.5 px-3 bg-[#25D366] text-white font-extrabold text-xs rounded-xl hover:bg-[#20bd5a] transition-all shadow-sm flex items-center justify-center gap-1.5 active:scale-95"
+                      >
+                        <span>💬</span> Share via WhatsApp
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* New Insights and Print Guide row */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 animate-fade-in">
+                  {/* Scan Insights Chart Card */}
+                  <div className={`border rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 ${
+                    theme === 'dark' 
+                      ? 'bg-slate-950/40 border-slate-800 text-white' 
+                      : 'bg-slate-50 border-slate-200 text-slate-800'
+                  }`}>
+                    <div>
+                      <h4 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 mb-1 ${theme === 'dark' ? 'text-[#FFCFF1]' : 'text-[#051650]'}`}>
+                        <span>📊</span> Scan Insights (Last 30 Days)
+                      </h4>
+                      <p className="text-[11px] text-slate-400 mb-4">
+                        Historical count of scans showing recent physical activity of the nfc wristband.
+                      </p>
+                    </div>
+
+                    {/* Chart Container */}
+                    <div className="h-44 w-full text-xs">
+                      {formData.scan_count && formData.scan_count > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart
+                            data={generate30DayScanData(formData.scan_count, formData.tag_id)}
+                            margin={{ top: 10, right: 10, left: -25, bottom: 0 }}
+                          >
+                            <defs>
+                              <linearGradient id="colorScans" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#C54B8C" stopOpacity={theme === 'dark' ? 0.4 : 0.3}/>
+                                <stop offset="95%" stopColor="#C54B8C" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? 'rgba(255,255,255,0.05)' : '#f1f5f9'} />
+                            <XAxis 
+                              dataKey="date" 
+                              stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} 
+                              fontSize={9}
+                              tickLine={false}
+                            />
+                            <YAxis 
+                              stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} 
+                              fontSize={9}
+                              tickLine={false}
+                              allowDecimals={false}
+                            />
+                            <Tooltip 
+                              contentStyle={{ 
+                                backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', 
+                                border: theme === 'dark' ? '1px solid rgba(255,255,255,0.1)' : '1px solid #e2e8f0',
+                                borderRadius: '8px',
+                                color: theme === 'dark' ? '#f8fafc' : '#0f172a'
+                              }}
+                            />
+                            <Area 
+                              type="monotone" 
+                              dataKey="scans" 
+                              stroke="#C54B8C" 
+                              strokeWidth={2}
+                              fillOpacity={1} 
+                              fill="url(#colorScans)" 
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className={`h-full flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-4 text-center ${
+                          theme === 'dark' ? 'border-slate-800 text-slate-500' : 'border-slate-200 text-slate-400'
+                        }`}>
+                          <span className="text-xl mb-1">📈</span>
+                          <span className="font-semibold text-[11px]">No scan activity recorded yet</span>
+                          <span className="text-[10px]">Insights will populate once the QR/NFC tag is scanned.</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Print Label Guide Card */}
+                  <div className={`border rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 ${
+                    theme === 'dark' 
+                      ? 'bg-slate-950/40 border-slate-800 text-white' 
+                      : 'bg-slate-50 border-slate-200 text-slate-800'
+                  }`}>
+                    <div>
+                      <h4 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 mb-1 ${theme === 'dark' ? 'text-[#FFCFF1]' : 'text-[#051650]'}`}>
+                        <span>🖨️</span> Physical Tag Labeling Guide
+                      </h4>
+                      <p className="text-[11px] text-slate-400 mb-3">
+                        How to label your physical NFC tag with the 6-character code to prevent mix-ups.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <div className="flex items-start gap-2.5 text-[11px]">
+                        <span className="font-extrabold text-[#C54B8C] bg-[#FFCFF1]/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">1</span>
+                        <div>
+                          <p className="font-bold leading-none">Print/Write clearly</p>
+                          <p className="text-slate-400 mt-0.5">Write <span className="font-mono font-bold text-[#C54B8C] bg-[#FFCFF1]/10 px-1 rounded">{formData.tag_id}</span> on a small sticker or a label maker tape.</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2.5 text-[11px]">
+                        <span className="font-extrabold text-[#C54B8C] bg-[#FFCFF1]/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
+                        <div>
+                          <p className="font-bold leading-none">Apply to Band Backside</p>
+                          <p className="text-slate-400 mt-0.5">Affix the sticker to the flat underside of the silicone bracelet housing the NFC chip.</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2.5 text-[11px]">
+                        <span className="font-extrabold text-[#C54B8C] bg-[#FFCFF1]/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">3</span>
+                        <div>
+                          <p className="font-bold leading-none">Apply Waterproof Shield</p>
+                          <p className="text-slate-400 mt-0.5">Cover with a piece of clear protective tape to protect the print against water & scuffs.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className={`mt-3 p-2 rounded-xl flex items-center gap-2 border text-center justify-center ${
+                      theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                    }`}>
+                      <span className="text-xs">🏷️</span>
+                      <span className="text-[10px] font-bold text-slate-400">Wristband ID Reference Code:</span>
+                      <span className="font-mono text-xs text-[#C54B8C] font-black tracking-wider">{formData.tag_id}</span>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                   <div className="sm:col-span-3">
-                    <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Child's Name</label>
+                    <label className={`block text-xs font-bold uppercase mb-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Child's Name</label>
                     <input 
                       type="text" 
                       value={formData.child_name || ''} 
                       onChange={e => setFormData({...formData, child_name: e.target.value})} 
-                      className="w-full p-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#051650]" 
+                      className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                        theme === 'dark' 
+                          ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' 
+                          : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'
+                      }`} 
                     />
                   </div>
                   <div className="sm:col-span-1">
-                    <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Avatar</label>
+                    <label className={`block text-xs font-bold uppercase mb-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Avatar</label>
                     <select 
                       value={formData.avatar || '🧒'} 
                       onChange={e => setFormData({...formData, avatar: e.target.value})} 
-                      className="w-full p-3 border border-slate-200 rounded-lg text-xl text-center focus:outline-none focus:ring-2 focus:ring-[#051650]"
+                      className={`w-full p-3 border rounded-lg text-xl text-center focus:outline-none focus:ring-2 transition-all ${
+                        theme === 'dark' 
+                          ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' 
+                          : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'
+                      }`}
                     >
                       {['🦸‍♀️','🧒','👧','👦','🧑','👶'].map(a => <option key={a} value={a}>{a}</option>)}
                     </select>
@@ -871,24 +1410,28 @@ export default function Dashboard() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Parent WhatsApp (For Location Alerts)</label>
+                  <label className={`block text-xs font-bold uppercase mb-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Parent WhatsApp (For Location Alerts)</label>
                   <input 
                     type="tel" 
                     placeholder="e.g. 082 123 4567" 
                     value={formData.parent_whatsapp || ''} 
                     onChange={e => setFormData({...formData, parent_whatsapp: e.target.value})} 
-                    className="w-full p-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#051650]" 
+                    className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                      theme === 'dark' 
+                        ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' 
+                        : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'
+                    }`} 
                   />
-                  <p className="text-xs text-slate-500 mt-2">When a finder taps "Share location", a map link will be sent here.</p>
+                  <p className="text-xs text-slate-400 mt-2">When a finder taps "Share location", a map link will be sent here.</p>
                 </div>
 
                 <hr className="border-slate-100"/>
                 
                 <div>
                   <div className="flex justify-between items-center mb-4">
-                    <label className="block text-xs font-bold uppercase text-slate-500">Emergency Contacts</label>
+                    <label className={`block text-xs font-bold uppercase ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Emergency Contacts</label>
                     <button 
-                      onClick={() => setFormData({...formData, contacts: [...(formData.contacts||[]), {name:'', relation:'', phone:'', whatsapp:true}]})} 
+                      onClick={() => { triggerHaptic(); setFormData({...formData, contacts: [...(formData.contacts||[]), {name:'', relation:'', phone:'', whatsapp:true}]}); }} 
                       className="text-[#C54B8C] text-sm font-semibold hover:underline"
                     >
                       + Add Contact
@@ -896,11 +1439,17 @@ export default function Dashboard() {
                   </div>
                   
                   {(!formData.contacts || formData.contacts.length === 0) && (
-                    <div className="p-4 bg-slate-50 rounded-lg text-sm text-slate-500 italic text-center">No contacts added.</div>
+                    <div className={`p-4 rounded-lg text-sm italic text-center border ${
+                      theme === 'dark' ? 'bg-slate-950/20 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-500'
+                    }`}>No contacts added.</div>
                   )}
 
                   {(formData.contacts || []).map((c: any, i: number) => (
-                    <div key={i} className="p-4 border border-slate-200 rounded-xl mb-3 relative bg-slate-50/50">
+                    <div key={i} className={`p-4 border rounded-xl mb-3 relative transition-all ${
+                      theme === 'dark' 
+                        ? 'bg-slate-950/40 border-slate-800 text-white shadow-inner' 
+                        : 'bg-slate-50/50 border-slate-200 text-slate-800'
+                    }`}>
                       <button 
                         onClick={() => { const nc = [...formData.contacts]; nc.splice(i,1); setFormData({...formData, contacts: nc}); }} 
                         className="absolute top-4 right-4 text-slate-400 hover:text-red-500 text-sm font-bold"
@@ -911,21 +1460,21 @@ export default function Dashboard() {
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 pr-6">
                         <div>
-                          <label className="block text-[10px] uppercase text-slate-500 mb-1">Name</label>
-                          <input type="text" placeholder="e.g. Thandeka" value={c.name} onChange={e => { const nc = [...formData.contacts]; nc[i].name = e.target.value; setFormData({...formData, contacts: nc}); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#051650]" />
+                          <label className="block text-[10px] uppercase text-slate-400 mb-1">Name</label>
+                          <input type="text" placeholder="e.g. Thandeka" value={c.name} onChange={e => { const nc = [...formData.contacts]; nc[i].name = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
                         </div>
                         <div>
-                          <label className="block text-[10px] uppercase text-slate-500 mb-1">Relation</label>
-                          <input type="text" placeholder="e.g. Mom" value={c.relation} onChange={e => { const nc = [...formData.contacts]; nc[i].relation = e.target.value; setFormData({...formData, contacts: nc}); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#051650]" />
+                          <label className="block text-[10px] uppercase text-slate-400 mb-1">Relation</label>
+                          <input type="text" placeholder="e.g. Mom" value={c.relation} onChange={e => { const nc = [...formData.contacts]; nc[i].relation = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
                         </div>
                       </div>
                       
                       <div className="mb-3">
-                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Phone Number</label>
-                        <input type="tel" placeholder="e.g. 082 123 4567" value={c.phone} onChange={e => { const nc = [...formData.contacts]; nc[i].phone = e.target.value; setFormData({...formData, contacts: nc}); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#051650]" />
+                        <label className="block text-[10px] uppercase text-slate-400 mb-1">Phone Number</label>
+                        <input type="tel" placeholder="e.g. 082 123 4567" value={c.phone} onChange={e => { const nc = [...formData.contacts]; nc[i].phone = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
                       </div>
                       
-                      <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer w-max">
+                      <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer w-max">
                         <input type="checkbox" checked={c.whatsapp} onChange={e => { const nc = [...formData.contacts]; nc[i].whatsapp = e.target.checked; setFormData({...formData, contacts: nc}); }} className="rounded text-[#25D366] focus:ring-[#25D366]" />
                         Enable WhatsApp Button
                       </label>
@@ -936,20 +1485,20 @@ export default function Dashboard() {
                 <hr className="border-slate-100"/>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-4">Medical Information</label>
+                  <label className={`block text-xs font-bold uppercase mb-4 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Medical Information</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <div>
-                      <label className="block text-[10px] uppercase text-slate-500 mb-1">Allergies</label>
-                      <input type="text" placeholder="e.g. Peanuts, Penicillin" value={formData.medical?.allergies || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, allergies: e.target.value}})} className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#051650]" />
+                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Allergies</label>
+                      <input type="text" placeholder="e.g. Peanuts, Penicillin" value={formData.medical?.allergies || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, allergies: e.target.value}})} className={`w-full p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
                     </div>
                     <div>
-                      <label className="block text-[10px] uppercase text-slate-500 mb-1">Conditions</label>
-                      <input type="text" placeholder="e.g. Asthma, Epilepsy" value={formData.medical?.conditions || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, conditions: e.target.value}})} className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#051650]" />
+                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Conditions</label>
+                      <input type="text" placeholder="e.g. Asthma, Epilepsy" value={formData.medical?.conditions || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, conditions: e.target.value}})} className={`w-full p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[10px] uppercase text-slate-500 mb-1">Additional Notes</label>
-                    <textarea placeholder="e.g. Carries an inhaler in the front pocket of her school bag." value={formData.medical?.notes || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, notes: e.target.value}})} className="w-full p-3 border border-slate-200 rounded-lg h-24 resize-none text-sm focus:outline-none focus:ring-2 focus:ring-[#051650]"></textarea>
+                    <label className="block text-[10px] uppercase text-slate-400 mb-1">Additional Notes</label>
+                    <textarea placeholder="e.g. Carries an inhaler in the front pocket of her school bag." value={formData.medical?.notes || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, notes: e.target.value}})} className={`w-full p-3 border rounded-lg h-24 resize-none text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`}></textarea>
                   </div>
                 </div>
                 

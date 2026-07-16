@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, generateId } from '../lib/supabase';
 
+const triggerHaptic = () => {
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try {
+      navigator.vibrate(30);
+    } catch (e) {
+      // Ignored gracefully
+    }
+  }
+};
+
 export default function Admin() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [passcode, setPasscode] = useState('');
@@ -12,6 +22,12 @@ export default function Admin() {
   const [generatedBatch, setGeneratedBatch] = useState<any[]>([]);
   
   const [metrics, setMetrics] = useState({ total: 0, claimed: 0, unclaimed: 0 });
+
+  // Tags List Management State
+  const [tags, setTags] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingLabels, setEditingLabels] = useState<Record<string, string>>({});
+  const [savingLabels, setSavingLabels] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -25,11 +41,13 @@ export default function Admin() {
     };
     checkAdmin();
     fetchMetrics();
+    fetchTagsList();
   }, []);
 
   const handlePasscodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (passcode.toLowerCase() === 'lotap123' || passcode === 'lotap2026') {
+      triggerHaptic();
       setAuthorized(true);
       setPassError('');
     } else {
@@ -37,9 +55,26 @@ export default function Admin() {
     }
   };
 
+  const fetchTagsList = async () => {
+    const { data } = await supabase.from('tags').select('*');
+    if (data) {
+      // Sort tags: claimed first, then alphabetical by tag_id
+      const sorted = [...data].sort((a, b) => {
+        if (a.owner_id && !b.owner_id) return -1;
+        if (!a.owner_id && b.owner_id) return 1;
+        return a.tag_id.localeCompare(b.tag_id);
+      });
+      setTags(sorted);
+      
+      const initial: Record<string, string> = {};
+      sorted.forEach((t: any) => {
+        initial[t.tag_id] = t.custom_label || '';
+      });
+      setEditingLabels(initial);
+    }
+  };
+
   const fetchMetrics = async () => {
-    // In a real app we would use an RPC or agg query,
-    // Here we will do a simple select for the prototype metrics
     const { data: allTags } = await supabase.from('tags').select('owner_id');
     if (allTags) {
       const claimed = allTags.filter((t: any) => t.owner_id !== null).length;
@@ -49,6 +84,21 @@ export default function Admin() {
         unclaimed: allTags.length - claimed
       });
     }
+  };
+
+  const handleUpdateLabel = async (tagId: string) => {
+    setSavingLabels(prev => ({ ...prev, [tagId]: true }));
+    const label = editingLabels[tagId] || '';
+    
+    const { error } = await supabase.from('tags').update({ custom_label: label }).eq('tag_id', tagId);
+    
+    if (error) {
+      alert('Error saving custom label: ' + error.message);
+    } else {
+      await fetchTagsList();
+      await fetchMetrics();
+    }
+    setSavingLabels(prev => ({ ...prev, [tagId]: false }));
   };
 
   const handleGenerate = async () => {
@@ -64,6 +114,7 @@ export default function Admin() {
       setGeneratedBatch(formatted);
     }
     await fetchMetrics();
+    await fetchTagsList();
     setLoading(false);
   };
 
@@ -154,7 +205,7 @@ export default function Admin() {
             />
           </div>
           <button 
-            onClick={handleGenerate}
+            onClick={() => { triggerHaptic(); handleGenerate(); }}
             disabled={loading || batchSize <= 0}
             className="bg-[#051650] text-white px-6 py-3 rounded-lg font-semibold hover:bg-[#0A2472] transition-colors disabled:opacity-50"
           >
@@ -166,7 +217,7 @@ export default function Admin() {
           <div className="mt-6 pt-6 border-t border-slate-200">
             <div className="flex justify-between items-center mb-4">
               <span className="text-sm font-semibold text-green-600">✓ Successfully generated {generatedBatch.length} codes</span>
-              <button onClick={handleExportCSV} className="bg-[#C54B8C] text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-[#B53389] transition-colors shadow-sm">
+              <button onClick={() => { triggerHaptic(); handleExportCSV(); }} className="bg-[#C54B8C] text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-[#B53389] transition-colors shadow-sm">
                 Download CSV for Factory
               </button>
             </div>
@@ -176,6 +227,99 @@ export default function Admin() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Beautiful Admin Custom Labeling & NFC Tag Management Tool */}
+      <div className="bg-slate-50 p-6 rounded-lg border border-slate-200 mt-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-[#051650] flex items-center gap-2">
+              <span>🏷️</span> Assign NFC Tag Custom Labels
+            </h2>
+            <p className="text-xs text-slate-500">
+              Assign easy-to-identify labels (e.g. 'Child-1-Wristband') to make tags easily identifiable on multi-child parent dashboards.
+            </p>
+          </div>
+          <div className="w-full sm:w-64">
+            <input 
+              type="text"
+              placeholder="🔍 Search tags, children or labels..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full p-2.5 border border-slate-300 rounded-lg text-xs bg-white text-[#051650] font-medium focus:outline-none focus:ring-2 focus:ring-[#051650]"
+            />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto bg-white rounded-lg border border-slate-200 shadow-sm max-h-[420px] overflow-y-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead className="sticky top-0 bg-slate-100 z-10 border-b border-slate-200">
+              <tr className="text-[#051650] uppercase font-bold text-[10px] tracking-wider">
+                <th className="p-3">Tag ID</th>
+                <th className="p-3">Status</th>
+                <th className="p-3">Child Name</th>
+                <th className="p-3">Custom Label / Wristband Identifier</th>
+                <th className="p-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {(() => {
+                const query = searchQuery.toLowerCase().trim();
+                const filtered = tags.filter((t: any) => 
+                  t.tag_id.toLowerCase().includes(query) ||
+                  (t.child_name || '').toLowerCase().includes(query) ||
+                  (t.custom_label || '').toLowerCase().includes(query)
+                );
+                
+                if (filtered.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">
+                        No active or generated tags match "{searchQuery}"
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return filtered.map((t: any) => (
+                  <tr key={t.tag_id} className="hover:bg-slate-50/50">
+                    <td className="p-3 font-mono font-bold text-[#051650]">{t.tag_id}</td>
+                    <td className="p-3">
+                      {t.owner_id ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          Claimed
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                          Unclaimed
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3 font-semibold text-slate-700">{t.child_name || '—'}</td>
+                    <td className="p-3">
+                      <input 
+                        type="text"
+                        placeholder="e.g. Child-1-Wristband"
+                        value={editingLabels[t.tag_id] ?? ''}
+                        onChange={(e) => setEditingLabels(prev => ({ ...prev, [t.tag_id]: e.target.value }))}
+                        className="w-full max-w-xs p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#051650] bg-slate-50 focus:bg-white text-xs font-semibold text-[#051650]"
+                      />
+                    </td>
+                    <td className="p-3 text-right">
+                      <button
+                        onClick={() => { triggerHaptic(); handleUpdateLabel(t.tag_id); }}
+                        disabled={savingLabels[t.tag_id] || (editingLabels[t.tag_id] ?? '') === (t.custom_label ?? '')}
+                        className="bg-[#051650] hover:bg-[#0A2472] text-white px-3.5 py-2 rounded-lg font-bold transition-colors disabled:opacity-40 text-[10px]"
+                      >
+                        {savingLabels[t.tag_id] ? 'Saving...' : 'Save Label'}
+                      </button>
+                    </td>
+                  </tr>
+                ));
+              })()}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
