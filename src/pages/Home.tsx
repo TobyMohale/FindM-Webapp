@@ -73,25 +73,9 @@ export default function Home() {
               </h1>
             </div>
 
-            {/* Wavy text lines placeholder from the draft */}
-            <div className="p-5 glass-liquid-card rounded-2xl shadow-sm space-y-4 relative">
-              <span className="absolute top-2 right-3 text-[9px] font-black tracking-widest text-slate-300 uppercase select-none">
-                Draft Placeholder
-              </span>
+            {/* Action card for portal setup and physical wristbands */}
+            <div className="p-5 glass-liquid-card rounded-2xl shadow-sm space-y-4 relative overflow-hidden group hover:shadow-md transition-all duration-300 border border-[#FFCFF1]/40">
               
-              <div className="space-y-2.5">
-                {/* Wavy lines constructed with SVG paths */}
-                <svg className="w-full h-3 text-[#FFCFF1]" viewBox="0 0 400 12" preserveAspectRatio="none">
-                  <path d="M 0 6 Q 10 12, 20 6 T 40 6 T 60 6 T 80 6 T 100 6 T 120 6 T 140 6 T 160 6 T 180 6 T 200 6 T 220 6 T 240 6 T 260 6 T 280 6 T 300 6 T 320 6 T 340 6 T 360 6 T 380 6 T 400 6" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                </svg>
-                <svg className="w-full h-3 text-[#FFCFF1]" viewBox="0 0 400 12" preserveAspectRatio="none">
-                  <path d="M 0 6 Q 10 12, 20 6 T 40 6 T 60 6 T 80 6 T 100 6 T 120 6 T 140 6 T 160 6 T 180 6 T 200 6 T 220 6 T 240 6 T 260 6 T 280 6 T 300 6 T 320 6 T 340 6 T 360 6 T 380 6 T 400 6" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                </svg>
-                <svg className="w-5/6 h-3 text-[#FFCFF1]" viewBox="0 0 350 12" preserveAspectRatio="none">
-                  <path d="M 0 6 Q 10 12, 20 6 T 40 6 T 60 6 T 80 6 T 100 6 T 120 6 T 140 6 T 160 6 T 180 6 T 200 6 T 220 6 T 240 6 T 260 6 T 280 6 T 300 6 T 320 6 T 340 6" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                </svg>
-              </div>
-
               {/* Set Up button (Pill shaped, matching draft button "SET UP") */}
               <div className="pt-2 flex flex-wrap items-center gap-4">
                 <button 
@@ -406,12 +390,13 @@ export default function Home() {
                         <button 
                           onClick={() => {
                             navigator.clipboard.writeText('demo01');
-                            alert('Demo tag ID "demo01" copied to clipboard!');
+                            setCopyStatus('COPIED!');
+                            setTimeout(() => setCopyStatus('COPY'), 2000);
                           }}
-                          className="text-[9px] text-[#0066FF] hover:text-[#0055DD] font-black flex items-center gap-0.5"
+                          className="text-[9px] text-[#0066FF] hover:text-[#0055DD] font-black flex items-center gap-0.5 transition-all"
                           title="Copy Tag Code"
                         >
-                          📋 COPY
+                          📋 {copyStatus}
                         </button>
                       </div>
                       <p className="text-[11px] text-slate-500 font-medium leading-relaxed mt-1.5 max-w-xs px-2">

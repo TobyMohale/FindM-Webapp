@@ -68,6 +68,7 @@ export default function Dashboard() {
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
   const [tags, setTags] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState<any>(null);
@@ -1228,7 +1229,8 @@ export default function Dashboard() {
                           triggerHaptic();
                           const publicUrl = `${getPublicOrigin()}/t/${formData.tag_id}`;
                           navigator.clipboard.writeText(publicUrl);
-                          alert(`Short deep-link URL for ${formData.child_name || 'your child'} has been copied to your clipboard!`);
+                          setToastMessage(`Short deep-link URL for ${formData.child_name || 'your child'} copied!`);
+                          setTimeout(() => setToastMessage(null), 3000);
                         }}
                         className={`w-full py-2.5 px-3 border font-extrabold text-xs rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 active:scale-95 ${
                           theme === 'dark' 
@@ -1507,6 +1509,15 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Floating Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#051650] text-white text-xs font-black uppercase tracking-wider px-6 py-4 rounded-2xl shadow-2xl border border-white/10 flex items-center gap-2 animate-fade-in">
+          <span>🔔</span>
+          <span>{toastMessage}</span>
+          <button onClick={() => setToastMessage(null)} className="ml-2 hover:text-[#C54B8C] font-bold">✕</button>
+        </div>
+      )}
     </div>
   );
 }

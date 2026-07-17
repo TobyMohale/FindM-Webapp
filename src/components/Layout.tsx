@@ -1,19 +1,25 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Menu, X } from 'lucide-react';
 
 export default function Layout() {
   const location = useLocation();
   const isTapView = location.pathname.startsWith('/t/');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   if (isTapView) {
     return <Outlet />; // Tap view has no global header to remain lightweight and distraction-free
   }
 
+  const handleLinkClick = () => {
+    setMobileMenuOpen(false);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+      <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-[1000] shadow-xs transition-all duration-300">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2 group select-none">
+          <Link to="/" className="flex items-center gap-2 group select-none" onClick={handleLinkClick}>
             <span className="font-black text-2xl tracking-tight text-[#051650] flex items-center gap-1.5 leading-none">
               <span className="relative inline-block pb-1.5">
                 Lo
@@ -27,20 +33,21 @@ export default function Layout() {
               <span className="text-[#C54B8C]">Tap</span>
             </span>
           </Link>
-          <nav className="flex items-center gap-3 sm:gap-6">
+
+          {/* Desktop Navigation */}
+          <nav className="hidden md:flex items-center gap-6">
             <Link 
               to="/" 
               className={`text-xs font-black tracking-wider uppercase transition-all ${location.pathname === '/' ? 'text-[#C54B8C]' : 'text-[#0A2472] hover:text-[#C54B8C]'}`}
             >
               HOME
             </Link>
-            <a 
-              href="#about" 
-              className="text-xs font-black tracking-wider uppercase text-[#0A2472] hover:text-[#C54B8C] transition-all"
+            <Link 
+              to="/about"
+              className={`text-xs font-black tracking-wider uppercase transition-all ${location.pathname === '/about' ? 'text-[#C54B8C]' : 'text-[#0A2472] hover:text-[#C54B8C]'}`}
             >
               ABOUT
-            </a>
-
+            </Link>
             
             <Link 
               to="/dashboard" 
@@ -55,7 +62,53 @@ export default function Layout() {
               Admin
             </Link>
           </nav>
+
+          {/* Mobile Hamburguer Toggle Button */}
+          <button 
+            type="button"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="md:hidden p-2 text-[#051650] hover:text-[#C54B8C] hover:bg-slate-100/50 rounded-xl transition-all"
+            aria-label="Toggle navigation menu"
+          >
+            {mobileMenuOpen ? <X size={20} className="stroke-[2.5]" /> : <Menu size={20} className="stroke-[2.5]" />}
+          </button>
         </div>
+
+        {/* Mobile Dropdown Navigation */}
+        {mobileMenuOpen && (
+          <div className="md:hidden bg-white border-t border-slate-100 py-4 px-4 shadow-lg animate-fade-in space-y-3 absolute left-0 right-0 top-16 z-50">
+            <div className="flex flex-col gap-2">
+              <Link 
+                to="/" 
+                onClick={handleLinkClick}
+                className={`p-3 rounded-xl text-xs font-black tracking-wider uppercase transition-all ${location.pathname === '/' ? 'bg-[#FFCFF1]/40 text-[#C54B8C]' : 'text-[#0A2472] hover:bg-slate-50'}`}
+              >
+                HOME
+              </Link>
+              <Link 
+                to="/about"
+                onClick={handleLinkClick}
+                className={`p-3 rounded-xl text-xs font-black tracking-wider uppercase transition-all ${location.pathname === '/about' ? 'bg-[#FFCFF1]/40 text-[#C54B8C]' : 'text-[#0A2472] hover:bg-slate-50'}`}
+              >
+                ABOUT
+              </Link>
+              <Link 
+                to="/dashboard" 
+                onClick={handleLinkClick}
+                className={`p-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/claim') ? 'bg-[#FFCFF1] text-[#C54B8C]' : 'bg-[#051650] text-white hover:bg-[#0A2472] text-center'}`}
+              >
+                Set Up PORTAL
+              </Link>
+              <Link 
+                to="/admin" 
+                onClick={handleLinkClick}
+                className={`p-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors text-center ${location.pathname === '/admin' ? 'bg-[#FFCFF1] text-[#C54B8C]' : 'text-blue-600 hover:bg-blue-50'}`}
+              >
+                Admin
+              </Link>
+            </div>
+          </div>
+        )}
       </header>
       <main className="flex-1">
         <Outlet />

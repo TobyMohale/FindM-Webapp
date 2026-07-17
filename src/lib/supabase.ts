@@ -158,28 +158,67 @@ if (hasRealSupabase && !isForcedMock()) {
     from: (table: string) => {
       const actualTable = table === 'profiles' ? 'users' : table;
       return {
-        select: (fieldsStr?: string) => ({
-          eq: async (col: string, val: string) => {
-            await delay();
-            const store = getStore(actualTable);
-            if (col === 'tag_id' || col === 'id') {
-              return { data: store[val] ? [store[val]] : [], error: null };
+        select: (fieldsStr?: string) => {
+          const chain: any = {
+            _col: null,
+            _val: null,
+            _orderCol: null,
+            _orderAsc: true,
+            eq: function(col: string, val: any) {
+              this._col = col;
+              this._val = val;
+              return this;
+            },
+            order: function(col: string, opts?: any) {
+              this._orderCol = col;
+              this._orderAsc = opts?.ascending ?? true;
+              return this;
+            },
+            then: async function(onfulfilled: any) {
+              await delay();
+              const store = getStore(actualTable);
+              let items = Object.values(store);
+              if (this._col) {
+                if (this._col === 'tag_id' || this._col === 'id') {
+                  items = store[this._val] ? [store[this._val]] : [];
+                } else {
+                  items = items.filter((item: any) => item[this._col] === this._val);
+                }
+              }
+              if (this._orderCol) {
+                items.sort((a: any, b: any) => {
+                  const valA = a[this._orderCol];
+                  const valB = b[this._orderCol];
+                  if (valA < valB) return this._orderAsc ? -1 : 1;
+                  if (valA > valB) return this._orderAsc ? 1 : -1;
+                  return 0;
+                });
+              }
+              return onfulfilled({ data: items, error: null });
             }
-            if (col === 'owner_id') {
-              const matches = Object.values(store).filter((t: any) => t.owner_id === val);
-              return { data: matches, error: null };
-            }
-            return { data: [], error: null };
-          }
-        }),
+          };
+          return chain;
+        },
         update: (payload: any) => ({
           eq: async (col: string, val: string) => {
             await delay();
             const store = getStore(actualTable);
-            if ((col === 'tag_id' || col === 'id') && store[val]) {
-              store[val] = { ...store[val], ...payload };
+            if (col === 'tag_id' || col === 'id') {
+              if (store[val]) {
+                store[val] = { ...store[val], ...payload };
+                setStore(actualTable, store);
+                return { data: [store[val]], error: null };
+              }
+            } else {
+              let updated = [];
+              for (const k of Object.keys(store)) {
+                if (store[k][col] === val) {
+                  store[k] = { ...store[k], ...payload };
+                  updated.push(store[k]);
+                }
+              }
               setStore(actualTable, store);
-              return { data: [store[val]], error: null };
+              return { data: updated, error: null };
             }
             return { data: null, error: new Error('Record not found') };
           }
@@ -189,8 +228,8 @@ if (hasRealSupabase && !isForcedMock()) {
           const store = getStore(actualTable);
           const rows = Array.isArray(payload) ? payload : [payload];
           rows.forEach((row: any) => {
-            const key = row.tag_id || row.id;
-            store[key] = { ...row, created_at: new Date().toISOString() };
+            const key = row.id || row.tag_id || Math.random().toString(36).substr(2, 9);
+            store[key] = { id: key, ...row, created_at: new Date().toISOString() };
           });
           setStore(actualTable, store);
           return { data: payload, error: null };

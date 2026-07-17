@@ -5,6 +5,7 @@ import Admin from './pages/Admin';
 import Dashboard from './pages/Dashboard';
 import Tap from './pages/Tap';
 import Home from './pages/Home';
+import About from './pages/About';
 import ResetPassword from './pages/ResetPassword';
 
 export default function App() {
@@ -13,6 +14,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Home />} />
+          <Route path="about" element={<About />} />
           <Route path="admin" element={<Admin />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="claim/:tagId" element={<Dashboard />} />
