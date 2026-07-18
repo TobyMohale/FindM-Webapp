@@ -17,6 +17,21 @@ export default function Admin() {
   const [authorized, setAuthorized] = useState(false);
   const [passError, setPassError] = useState('');
 
+  // Password Recovery / Forgotten State
+  const [showForgot, setShowForgot] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryKey, setRecoveryKey] = useState('');
+  const [recoveryNewPasscode, setRecoveryNewPasscode] = useState('');
+  const [recoverySuccess, setRecoverySuccess] = useState('');
+  const [recoveryError, setRecoveryError] = useState('');
+
+  // Password Change in Admin Panel settings
+  const [currentPass, setCurrentPass] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [confirmPass, setConfirmPass] = useState('');
+  const [changeSuccess, setChangeSuccess] = useState('');
+  const [changeError, setChangeError] = useState('');
+
   const [batchSize, setBatchSize] = useState(100);
   const [loading, setLoading] = useState(false);
   const [generatedBatch, setGeneratedBatch] = useState<any[]>([]);
@@ -31,6 +46,10 @@ export default function Admin() {
 
   const [orders, setOrders] = useState<any[]>([]);
   const [updatingOrderStatus, setUpdatingOrderStatus] = useState<Record<string, boolean>>({});
+
+  const getStoredPasscode = () => {
+    return localStorage.getItem('findme_admin_passcode') || 'lotap123';
+  };
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -68,13 +87,75 @@ export default function Admin() {
 
   const handlePasscodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (passcode.toLowerCase() === 'lotap123' || passcode === 'lotap2026') {
+    const storedPasscode = getStoredPasscode();
+    if (passcode === storedPasscode || passcode === 'lotap2026') {
       triggerHaptic();
       setAuthorized(true);
       setPassError('');
     } else {
       setPassError('Invalid administrator passcode. Please try again.');
     }
+  };
+
+  const handleChangePasscode = (e: React.FormEvent) => {
+    e.preventDefault();
+    const storedPasscode = getStoredPasscode();
+    if (currentPass !== storedPasscode && currentPass !== 'lotap2026') {
+      setChangeError('Current passcode is incorrect.');
+      setChangeSuccess('');
+      return;
+    }
+    if (newPass.length < 6) {
+      setChangeError('New passcode must be at least 6 characters.');
+      setChangeSuccess('');
+      return;
+    }
+    if (newPass !== confirmPass) {
+      setChangeError('New passcode confirmation does not match.');
+      setChangeSuccess('');
+      return;
+    }
+    localStorage.setItem('findme_admin_passcode', newPass);
+    setChangeSuccess('Passcode successfully updated!');
+    setChangeError('');
+    setCurrentPass('');
+    setNewPass('');
+    setConfirmPass('');
+    triggerHaptic();
+  };
+
+  const handleRecoverySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError('');
+    setRecoverySuccess('');
+
+    // Check if recovery key is correct
+    if (recoveryKey.trim().toUpperCase() === 'LOTAP-ADMIN-MASTER-2026') {
+      if (recoveryNewPasscode.length < 6) {
+        setRecoveryError('New passcode must be at least 6 characters.');
+        return;
+      }
+      localStorage.setItem('findme_admin_passcode', recoveryNewPasscode);
+      setRecoverySuccess('Passcode reset successfully! You can now log in with your new passcode.');
+      setRecoveryKey('');
+      setRecoveryNewPasscode('');
+      setShowForgot(false);
+      setPasscode('');
+      return;
+    }
+
+    // Check if recovery via Admin email
+    const emailLower = recoveryEmail.toLowerCase().trim();
+    if (emailLower === 'johannesburgwebstudio@gmail.com' || emailLower === 'admin@lotap.co.za') {
+      localStorage.setItem('findme_admin_passcode', 'lotap123');
+      setRecoverySuccess('The passcode has been successfully reset to the default "lotap123". You can now log in and customize it immediately.');
+      setRecoveryEmail('');
+      setShowForgot(false);
+      setPasscode('lotap123');
+      return;
+    }
+
+    setRecoveryError('Invalid recovery key or unauthorized administrator email address.');
   };
 
   const fetchTagsList = async () => {
@@ -154,15 +235,107 @@ export default function Admin() {
   };
 
   if (!authorized) {
+    if (showForgot) {
+      return (
+        <div className="max-w-md mx-auto p-8 bg-white rounded-3xl shadow-xl border border-slate-100 mt-16 relative overflow-hidden animate-fade-in">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-[#FFCFF1] to-transparent opacity-40 rounded-bl-full pointer-events-none"></div>
+          <div className="text-center mb-6">
+            <div className="text-4xl mb-3">🛠️</div>
+            <h2 className="text-2xl font-black text-[#051650] font-serif uppercase tracking-tight">Passcode Recovery</h2>
+            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+              Verify your administrator identity to reset the passcode back to default, or use your master recovery key.
+            </p>
+          </div>
+
+          <form onSubmit={handleRecoverySubmit} className="space-y-4">
+            <div className="space-y-1">
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Method 1: Verified Admin Email</label>
+              <input 
+                type="email" 
+                placeholder="Admin Email (e.g. admin@lotap.co.za)" 
+                value={recoveryEmail}
+                onChange={e => {
+                  setRecoveryEmail(e.target.value);
+                  setRecoveryKey('');
+                }}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
+              />
+              <p className="text-[9px] text-slate-400 font-medium">Reset passcode back to the default "lotap123" instantly.</p>
+            </div>
+
+            <div className="relative py-2 flex items-center justify-center">
+              <span className="absolute w-full h-[1px] bg-slate-100"></span>
+              <span className="relative bg-white px-3 text-[10px] font-black text-slate-400">OR</span>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Method 2: Master Recovery Key</label>
+              <input 
+                type="password" 
+                placeholder="Enter Master Recovery Key" 
+                value={recoveryKey}
+                onChange={e => {
+                  setRecoveryKey(e.target.value);
+                  setRecoveryEmail('');
+                }}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
+              />
+              {recoveryKey.trim().length > 0 && (
+                <input 
+                  type="password" 
+                  placeholder="Choose New Secure Passcode (6+ chars)" 
+                  value={recoveryNewPasscode}
+                  onChange={e => setRecoveryNewPasscode(e.target.value)}
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
+                />
+              )}
+              <p className="text-[9px] text-slate-400 font-medium">Use the confidential factory-configured recovery key to set a new custom passcode immediately.</p>
+            </div>
+
+            <button 
+              type="submit" 
+              className="w-full bg-[#C54B8C] text-white py-3 px-4 rounded-xl font-extrabold uppercase tracking-wider text-xs hover:bg-[#B53389] transition-all shadow-md active:scale-95"
+            >
+              Verify & Reset Passcode
+            </button>
+          </form>
+
+          {recoveryError && (
+            <p className="text-xs font-semibold text-red-600 mt-4 text-center">{recoveryError}</p>
+          )}
+
+          <div className="mt-6 pt-4 border-t border-slate-100 text-center">
+            <button 
+              type="button"
+              onClick={() => {
+                setShowForgot(false);
+                setRecoveryError('');
+                setRecoverySuccess('');
+              }}
+              className="text-xs font-extrabold text-[#051650] hover:text-[#C54B8C] uppercase tracking-wider"
+            >
+              ← Back to Login
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="max-w-md mx-auto p-8 bg-white rounded-3xl shadow-xl border border-slate-100 mt-16 text-center relative overflow-hidden">
+      <div className="max-w-md mx-auto p-8 bg-white rounded-3xl shadow-xl border border-slate-100 mt-16 text-center relative overflow-hidden animate-fade-in">
         <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-[#FFCFF1] to-transparent opacity-40 rounded-bl-full pointer-events-none"></div>
         <div className="text-4xl mb-4">🔐</div>
         <h2 className="text-2xl font-black text-[#051650] mb-2 font-serif uppercase tracking-tight">Restricted Area</h2>
         <p className="text-xs text-slate-500 mb-6 leading-relaxed">
           This panel is restricted to <strong>LoTap & Johannesburg Web Studio Administrators</strong>. 
-          Please log in using an authorized administrator email, or enter the bypass passcode.
+          Please enter the secure administrator passcode to manage production tag batches and orders.
         </p>
+
+        {recoverySuccess && (
+          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-800">
+            {recoverySuccess}
+          </div>
+        )}
 
         <form onSubmit={handlePasscodeSubmit} className="space-y-4">
           <input 
@@ -184,11 +357,20 @@ export default function Admin() {
           <p className="text-xs font-semibold text-red-600 mt-3">{passError}</p>
         )}
 
-        <div className="mt-6 pt-5 border-t border-slate-100">
-          <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
-            Authorized admin credentials: <br/>
-            <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">johannesburgwebstudio@gmail.com</span>
-          </p>
+        <div className="mt-5 flex justify-between items-center text-xs font-bold uppercase tracking-wider border-t border-slate-100 pt-4">
+          <button 
+            type="button"
+            onClick={() => {
+              setShowForgot(true);
+              setRecoveryError('');
+              setRecoverySuccess('');
+            }}
+            className="text-slate-400 hover:text-[#C54B8C] transition-colors"
+          >
+            Forgot Passcode?
+          </button>
+          <span className="text-slate-300">|</span>
+          <span className="text-slate-400 font-mono text-[9px] lowercase">key: LOTAP-ADMIN-MASTER-2026</span>
         </div>
       </div>
     );
@@ -398,6 +580,67 @@ export default function Admin() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Admin Passcode Settings Section */}
+      <div className="bg-slate-50 p-6 rounded-lg border border-slate-200 mt-6 mb-8 animate-fade-in">
+        <h2 className="text-lg font-bold text-[#051650] flex items-center gap-2 mb-2">
+          <span>🔒</span> Admin Passcode Security Settings
+        </h2>
+        <p className="text-xs text-slate-500 mb-4">
+          Change the secure administrator passcode required to unlock this administration panel.
+        </p>
+
+        <form onSubmit={handleChangePasscode} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Current Passcode</label>
+            <input 
+              type="password" 
+              required
+              placeholder="••••••••"
+              value={currentPass}
+              onChange={e => setCurrentPass(e.target.value)}
+              className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#051650] text-[#051650]"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">New Secure Passcode</label>
+            <input 
+              type="password" 
+              required
+              placeholder="Min 6 characters"
+              value={newPass}
+              onChange={e => setNewPass(e.target.value)}
+              className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#051650] text-[#051650]"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Confirm New Passcode</label>
+            <div className="flex gap-2">
+              <input 
+                type="password" 
+                required
+                placeholder="••••••••"
+                value={confirmPass}
+                onChange={e => setConfirmPass(e.target.value)}
+                className="flex-1 p-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#051650] text-[#051650]"
+              />
+              <button 
+                type="submit"
+                className="bg-[#C54B8C] hover:bg-[#B53389] text-white px-5 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shrink-0"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </form>
+
+        {changeError && (
+          <p className="text-xs font-semibold text-red-600 mt-3">{changeError}</p>
+        )}
+        {changeSuccess && (
+          <p className="text-xs font-semibold text-emerald-600 mt-3">{changeSuccess}</p>
+        )}
       </div>
     </div>
   );

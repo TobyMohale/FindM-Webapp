@@ -74,8 +74,13 @@ export default function Home() {
             </div>
 
             {/* Action card for portal setup and physical wristbands */}
-            <div className="p-5 glass-liquid-card rounded-2xl shadow-sm space-y-4 relative overflow-hidden group hover:shadow-md transition-all duration-300 border border-[#FFCFF1]/40">
+            <div className="p-6 glass-liquid-card rounded-2xl shadow-sm space-y-4 relative overflow-hidden group hover:shadow-md transition-all duration-300 border border-[#FFCFF1]/40">
               
+              <h3 className="text-sm font-black uppercase text-[#051650] tracking-wider">Configure Your Portal</h3>
+              <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                Connect your child's physical LoTap safety wearable to an emergency profile. Access your custom cloud dashboard to configure contact details, medical cards, and instant emergency guidelines anytime.
+              </p>
+
               {/* Set Up button (Pill shaped, matching draft button "SET UP") */}
               <div className="pt-2 flex flex-wrap items-center gap-4">
                 <button 
@@ -84,51 +89,6 @@ export default function Home() {
                 >
                   SET UP PORTAL
                 </button>
-              </div>
-
-              {/* Set Up / Claim Code Input */}
-              <div className="pt-4 border-t border-[#FFCFF1]/40 mt-4">
-                <p className="text-xs font-bold text-[#051650] uppercase tracking-wider mb-2">Have a physical wristband?</p>
-                <form onSubmit={(e) => {
-                  e.preventDefault();
-                  const targetCode = (e.currentTarget.elements.namedItem('code') as HTMLInputElement).value.trim().toUpperCase();
-                  if (targetCode.length === 6) {
-                    navigate(`/t/${targetCode}`);
-                  } else {
-                    alert('Please enter a valid 6-character code.');
-                  }
-                }} className="flex gap-2 max-w-sm">
-                  <input 
-                    name="code"
-                    type="text"
-                    maxLength={6}
-                    placeholder="Enter 6-char code (e.g. demo01)"
-                    className="flex-1 px-4 py-2.5 bg-white border border-[#FFCFF1] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-bold text-[#051650] uppercase placeholder:normal-case transition-all shadow-inner"
-                  />
-                  <button 
-                    type="submit"
-                    className="bg-[#C54B8C] text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-opacity-90 transition-all shadow-sm"
-                  >
-                    GO
-                  </button>
-                </form>
-                
-                <div className="mt-3 flex items-center gap-2 animate-fade-in">
-                  <span className="text-[11px] font-bold text-slate-500">Live test code:</span>
-                  <span className="font-mono text-xs bg-[#FFCFF1]/50 text-[#C54B8C] px-2 py-0.5 rounded-md font-extrabold tracking-wider border border-[#C54B8C]/15">demo01</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText('demo01');
-                      setCopyStatus('Copied!');
-                      setTimeout(() => setCopyStatus('Copy'), 2000);
-                    }}
-                    className="text-[10px] bg-white hover:bg-[#FFCFF1]/20 text-[#051650] hover:text-[#C54B8C] px-2.5 py-1 rounded-lg transition-all font-bold flex items-center gap-1 active:scale-95 border border-slate-200 shadow-sm"
-                  >
-                    <span>{copyStatus === 'Copied!' ? '✅' : '📋'}</span>
-                    <span>{copyStatus}</span>
-                  </button>
-                </div>
               </div>
 
               {/* Arrow pointing from wavy lines placeholder to value prop quote */}
