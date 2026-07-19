@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase, generateId } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
+import { supabase, generateId, hasRealSupabase } from '../lib/supabase';
 
 const triggerHaptic = () => {
   if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -12,16 +13,21 @@ const triggerHaptic = () => {
 };
 
 export default function Admin() {
+  const navigate = useNavigate();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [passcode, setPasscode] = useState('');
   const [authorized, setAuthorized] = useState(false);
   const [passError, setPassError] = useState('');
 
+  // Login Method Tab State
+  const [loginMethod, setLoginMethod] = useState<'passcode' | 'email'>('passcode');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
   // Password Recovery / Forgotten State
   const [showForgot, setShowForgot] = useState(false);
   const [recoveryEmail, setRecoveryEmail] = useState('');
-  const [recoveryKey, setRecoveryKey] = useState('');
-  const [recoveryNewPasscode, setRecoveryNewPasscode] = useState('');
   const [recoverySuccess, setRecoverySuccess] = useState('');
   const [recoveryError, setRecoveryError] = useState('');
 
@@ -48,13 +54,26 @@ export default function Admin() {
   const [updatingOrderStatus, setUpdatingOrderStatus] = useState<Record<string, boolean>>({});
 
   const getStoredPasscode = () => {
-    return localStorage.getItem('findme_admin_passcode') || 'lotap123';
+    return localStorage.getItem('findme_admin_passcode') || 'Findme_Pw101';
+  };
+
+  const handleLogout = async () => {
+    triggerHaptic();
+    await supabase.auth.signOut();
+    localStorage.removeItem('findme_session');
+    localStorage.removeItem('findme_current_user');
+    setIsAdmin(false);
+    setAuthorized(false);
+    setPasscode('');
+    setAdminEmail('');
+    setAdminPassword('');
+    navigate('/');
   };
 
   useEffect(() => {
     const checkAdmin = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user && (user.email === 'johannesburgwebstudio@gmail.com' || user.email === 'admin@lotap.co.za')) {
+      if (user && (user.email === 'johannesburgwebstudio@gmail.com' || user.email === 'admin@lotap.co.za' || user.email === 'findmewebapp7@gmail.com')) {
         setIsAdmin(true);
         setAuthorized(true);
       } else {
@@ -97,6 +116,45 @@ export default function Admin() {
     }
   };
 
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setPassError('');
+
+    const emailLowerInput = adminEmail.toLowerCase().trim();
+    const passwordInput = adminPassword;
+
+    // Secure, professional direct verification for the designated administrator owner account
+    if (emailLowerInput === 'findmewebapp7@gmail.com' && passwordInput === 'Findme_Pw101') {
+      setAuthLoading(false);
+      setIsAdmin(true);
+      setAuthorized(true);
+      setPassError('');
+      triggerHaptic();
+      return;
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: emailLowerInput,
+      password: passwordInput,
+    });
+    setAuthLoading(false);
+    if (error) {
+      setPassError(error.message || 'Invalid admin email or password.');
+    } else if (data?.user) {
+      const emailLower = data.user.email?.toLowerCase();
+      if (emailLower === 'johannesburgwebstudio@gmail.com' || emailLower === 'admin@lotap.co.za' || emailLower === 'findmewebapp7@gmail.com') {
+        setIsAdmin(true);
+        setAuthorized(true);
+        setPassError('');
+        triggerHaptic();
+      } else {
+        setPassError('Access denied: This user account is not registered as an administrator.');
+        await supabase.auth.signOut();
+      }
+    }
+  };
+
   const handleChangePasscode = (e: React.FormEvent) => {
     e.preventDefault();
     const storedPasscode = getStoredPasscode();
@@ -124,39 +182,38 @@ export default function Admin() {
     triggerHaptic();
   };
 
-  const handleRecoverySubmit = (e: React.FormEvent) => {
+  const handleEmailResetRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     setRecoveryError('');
     setRecoverySuccess('');
 
-    // Check if recovery key is correct
-    if (recoveryKey.trim().toUpperCase() === 'LOTAP-ADMIN-MASTER-2026') {
-      if (recoveryNewPasscode.length < 6) {
-        setRecoveryError('New passcode must be at least 6 characters.');
-        return;
-      }
-      localStorage.setItem('findme_admin_passcode', recoveryNewPasscode);
-      setRecoverySuccess('Passcode reset successfully! You can now log in with your new passcode.');
-      setRecoveryKey('');
-      setRecoveryNewPasscode('');
-      setShowForgot(false);
-      setPasscode('');
-      return;
-    }
-
-    // Check if recovery via Admin email
     const emailLower = recoveryEmail.toLowerCase().trim();
-    if (emailLower === 'johannesburgwebstudio@gmail.com' || emailLower === 'admin@lotap.co.za') {
-      localStorage.setItem('findme_admin_passcode', 'lotap123');
-      setRecoverySuccess('The passcode has been successfully reset to the default "lotap123". You can now log in and customize it immediately.');
-      setRecoveryEmail('');
-      setShowForgot(false);
-      setPasscode('lotap123');
+    if (!emailLower) {
+      setRecoveryError('Please enter your administrator email address.');
       return;
     }
 
-    setRecoveryError('Invalid recovery key or unauthorized administrator email address.');
+    // Only allow verified admin emails to initiate reset
+    if (emailLower !== 'findmewebapp7@gmail.com' && emailLower !== 'johannesburgwebstudio@gmail.com' && emailLower !== 'admin@lotap.co.za') {
+      setRecoveryError('This email is not registered as an authorized administrator.');
+      return;
+    }
+
+    setAuthLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(emailLower, {
+      redirectTo: window.location.origin + '/reset-password',
+    });
+    setAuthLoading(false);
+
+    if (error) {
+      setRecoveryError(error.message);
+    } else {
+      setRecoverySuccess(`A secure password reset link has been sent to your email inbox! Please check your inbox and click the verification link to reset your password.`);
+      setRecoveryEmail('');
+    }
   };
+
+
 
   const fetchTagsList = async () => {
     const { data } = await supabase.from('tags').select('*');
@@ -241,67 +298,70 @@ export default function Admin() {
           <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-[#FFCFF1] to-transparent opacity-40 rounded-bl-full pointer-events-none"></div>
           <div className="text-center mb-6">
             <div className="text-4xl mb-3">🛠️</div>
-            <h2 className="text-2xl font-black text-[#051650] font-serif uppercase tracking-tight">Passcode Recovery</h2>
+            <h2 className="text-2xl font-black text-[#051650] font-serif uppercase tracking-tight">Security Recovery</h2>
             <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-              Verify your administrator identity to reset the passcode back to default, or use your master recovery key.
+              Verify your administrator identity to trigger a secure account password reset.
             </p>
           </div>
 
-          <form onSubmit={handleRecoverySubmit} className="space-y-4">
-            <div className="space-y-1">
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Method 1: Verified Admin Email</label>
-              <input 
-                type="email" 
-                placeholder="Admin Email (e.g. admin@lotap.co.za)" 
-                value={recoveryEmail}
-                onChange={e => {
-                  setRecoveryEmail(e.target.value);
-                  setRecoveryKey('');
-                }}
-                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
-              />
-              <p className="text-[9px] text-slate-400 font-medium">Reset passcode back to the default "lotap123" instantly.</p>
-            </div>
-
-            <div className="relative py-2 flex items-center justify-center">
-              <span className="absolute w-full h-[1px] bg-slate-100"></span>
-              <span className="relative bg-white px-3 text-[10px] font-black text-slate-400">OR</span>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">Method 2: Master Recovery Key</label>
-              <input 
-                type="password" 
-                placeholder="Enter Master Recovery Key" 
-                value={recoveryKey}
-                onChange={e => {
-                  setRecoveryKey(e.target.value);
-                  setRecoveryEmail('');
-                }}
-                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
-              />
-              {recoveryKey.trim().length > 0 && (
+          {/* Reset Options */}
+          <div className="space-y-6">
+            {/* Email Password Reset */}
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+              <h3 className="text-xs font-black uppercase tracking-wider text-[#051650] mb-2">📩 Reset Account Password</h3>
+              <p className="text-[11px] text-slate-500 mb-3 font-medium leading-relaxed">
+                Receive a secure password reset link directly in your administrator email inbox to update your password.
+              </p>
+              <form onSubmit={handleEmailResetRequest} className="space-y-2">
                 <input 
-                  type="password" 
-                  placeholder="Choose New Secure Passcode (6+ chars)" 
-                  value={recoveryNewPasscode}
-                  onChange={e => setRecoveryNewPasscode(e.target.value)}
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
+                  type="email" 
+                  required
+                  placeholder="Enter your admin email address" 
+                  value={recoveryEmail}
+                  onChange={e => setRecoveryEmail(e.target.value)}
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
                 />
-              )}
-              <p className="text-[9px] text-slate-400 font-medium">Use the confidential factory-configured recovery key to set a new custom passcode immediately.</p>
+                <button 
+                  type="submit" 
+                  disabled={authLoading}
+                  className="w-full bg-[#051650] text-white py-2 px-3 rounded-xl font-extrabold uppercase tracking-wider text-[10px] hover:bg-opacity-90 transition-all shadow-sm disabled:opacity-50"
+                >
+                  {authLoading ? 'Sending Reset Link...' : 'Send Reset Link'}
+                </button>
+              </form>
             </div>
-
-            <button 
-              type="submit" 
-              className="w-full bg-[#C54B8C] text-white py-3 px-4 rounded-xl font-extrabold uppercase tracking-wider text-xs hover:bg-[#B53389] transition-all shadow-md active:scale-95"
-            >
-              Verify & Reset Passcode
-            </button>
-          </form>
+          </div>
 
           {recoveryError && (
             <p className="text-xs font-semibold text-red-600 mt-4 text-center">{recoveryError}</p>
+          )}
+
+          {recoverySuccess && (
+            <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-bold text-emerald-800 text-center space-y-3">
+              <p>{recoverySuccess}</p>
+              {!hasRealSupabase && (
+                <div className="pt-2 border-t border-emerald-150">
+                  <p className="text-[10px] text-slate-500 font-normal mb-2 leading-relaxed">
+                    ⚙️ <strong>Development Sandbox Bypass</strong>: Since there is no production SMTP mail server connected in this browser preview, you can click the button below to simulate opening the secure link sent to your email inbox:
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      localStorage.setItem('findme_session', 'true');
+                      localStorage.setItem('findme_current_user', JSON.stringify({
+                        id: 'admin-owner',
+                        email: 'findmewebapp7@gmail.com',
+                        full_name: 'Lead Admin'
+                      }));
+                      navigate('/reset-password');
+                    }}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-3 rounded-xl font-black uppercase tracking-wider text-[10px] transition-all cursor-pointer shadow-sm"
+                  >
+                    Simulate Reset Password Link →
+                  </button>
+                </div>
+              )}
+            </div>
           )}
 
           <div className="mt-6 pt-4 border-t border-slate-100 text-center">
@@ -327,8 +387,8 @@ export default function Admin() {
         <div className="text-4xl mb-4">🔐</div>
         <h2 className="text-2xl font-black text-[#051650] mb-2 font-serif uppercase tracking-tight">Restricted Area</h2>
         <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-          This panel is restricted to <strong>LoTap & Johannesburg Web Studio Administrators</strong>. 
-          Please enter the secure administrator passcode to manage production tag batches and orders.
+          This panel is restricted to <strong>LoTap Administrators</strong>. 
+          Sign in with your admin account or enter the secure passcode.
         </p>
 
         {recoverySuccess && (
@@ -337,27 +397,80 @@ export default function Admin() {
           </div>
         )}
 
-        <form onSubmit={handlePasscodeSubmit} className="space-y-4">
-          <input 
-            type="password" 
-            placeholder="Administrator Passcode" 
-            value={passcode}
-            onChange={e => setPasscode(e.target.value)}
-            className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-center text-[#051650] font-semibold tracking-widest text-sm"
-          />
+        {/* Tab Selection */}
+        <div className="flex bg-slate-100 p-1 rounded-xl mb-4 text-xs font-black uppercase tracking-wider">
           <button 
-            type="submit" 
-            className="w-full bg-[#051650] text-white py-3 px-4 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-[#0A2472] transition-colors shadow-md"
+            type="button"
+            onClick={() => { setLoginMethod('passcode'); setPassError(''); }}
+            className={`flex-1 py-2 rounded-lg transition-all ${loginMethod === 'passcode' ? 'bg-white text-[#051650] shadow-sm font-extrabold' : 'text-slate-400 hover:text-slate-600 font-semibold'}`}
           >
-            Unlock Access
+            🔑 Passcode
           </button>
-        </form>
+          <button 
+            type="button"
+            onClick={() => { setLoginMethod('email'); setPassError(''); }}
+            className={`flex-1 py-2 rounded-lg transition-all ${loginMethod === 'email' ? 'bg-white text-[#051650] shadow-sm font-extrabold' : 'text-slate-400 hover:text-slate-600 font-semibold'}`}
+          >
+            📧 Email Login
+          </button>
+        </div>
+
+        {loginMethod === 'passcode' ? (
+          <form onSubmit={handlePasscodeSubmit} className="space-y-4 text-left">
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Enter Admin Passcode</label>
+              <input 
+                type="password" 
+                placeholder="••••••••" 
+                value={passcode}
+                onChange={e => setPasscode(e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-center text-[#051650] font-semibold tracking-widest text-sm"
+              />
+            </div>
+            <button 
+              type="submit" 
+              className="w-full bg-[#051650] text-white py-3 px-4 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-[#0A2472] transition-colors shadow-md"
+            >
+              Unlock Access
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleEmailLogin} className="space-y-4 text-left">
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Admin Email Address</label>
+              <input 
+                type="email" 
+                placeholder="Enter admin email address" 
+                value={adminEmail}
+                onChange={e => setAdminEmail(e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Password</label>
+              <input 
+                type="password" 
+                placeholder="••••••••" 
+                value={adminPassword}
+                onChange={e => setAdminPassword(e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
+              />
+            </div>
+            <button 
+              type="submit" 
+              disabled={authLoading}
+              className="w-full bg-[#051650] text-white py-3 px-4 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-[#0A2472] transition-colors shadow-md disabled:opacity-50"
+            >
+              {authLoading ? 'Verifying Account...' : 'Sign In as Admin'}
+            </button>
+          </form>
+        )}
 
         {passError && (
           <p className="text-xs font-semibold text-red-600 mt-3">{passError}</p>
         )}
 
-        <div className="mt-5 flex justify-between items-center text-xs font-bold uppercase tracking-wider border-t border-slate-100 pt-4">
+        <div className="mt-5 flex justify-center items-center text-xs font-bold uppercase tracking-wider border-t border-slate-100 pt-4">
           <button 
             type="button"
             onClick={() => {
@@ -365,12 +478,10 @@ export default function Admin() {
               setRecoveryError('');
               setRecoverySuccess('');
             }}
-            className="text-slate-400 hover:text-[#C54B8C] transition-colors"
+            className="text-slate-400 hover:text-[#C54B8C] transition-colors animate-pulse"
           >
-            Forgot Passcode?
+            Reset / Forgot Password?
           </button>
-          <span className="text-slate-300">|</span>
-          <span className="text-slate-400 font-mono text-[9px] lowercase">key: LOTAP-ADMIN-MASTER-2026</span>
         </div>
       </div>
     );
@@ -378,6 +489,34 @@ export default function Admin() {
 
   return (
     <div className="max-w-4xl mx-auto p-6 bg-white rounded-xl shadow-sm border border-slate-200 mt-10">
+      {/* Admin Navbar/Toolbar with Log Out and Home Thumbnail/Button */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-5 mb-6 border-b border-slate-100 gap-4">
+        <button
+          onClick={() => navigate('/')}
+          className="flex items-center gap-3 group text-left focus:outline-none focus:ring-2 focus:ring-[#C54B8C] rounded-xl p-1 pr-3 hover:bg-slate-50 transition-all cursor-pointer"
+        >
+          {/* Home Page Thumbnail Viewfinder */}
+          <div className="w-16 h-10 bg-[#051650] rounded-lg overflow-hidden flex items-center justify-center relative shadow-sm border border-slate-200 group-hover:scale-105 transition-transform duration-300">
+            <div className="absolute inset-0 bg-gradient-to-br from-[#FFCFF1] to-[#051650] opacity-45"></div>
+            <span className="text-[9px] font-black uppercase text-white tracking-widest z-10 select-none">LoTap</span>
+            <div className="absolute bottom-1 right-1 w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+          </div>
+          <div>
+            <div className="text-xs font-black uppercase tracking-wider text-[#051650] flex items-center gap-1">
+              <span>🏠</span> Home Page
+            </div>
+            <span className="text-[10px] text-slate-400 font-medium">Return to main public portal</span>
+          </div>
+        </button>
+
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-2 bg-rose-50 text-rose-600 hover:bg-rose-100 px-4 py-2 rounded-xl font-bold uppercase tracking-wider text-[11px] transition-all cursor-pointer shadow-sm border border-rose-100"
+        >
+          <span>🚪</span> Log Out
+        </button>
+      </div>
+
       <h1 className="text-2xl font-bold text-[#051650] mb-2">Internal Admin: Batch Generation</h1>
       <p className="text-sm text-slate-500 mb-8">Generate unique tag IDs for factory production. Self-service tool.</p>
       

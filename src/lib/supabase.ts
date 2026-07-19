@@ -70,8 +70,16 @@ if (hasRealSupabase && !isForcedMock()) {
   }
 
   const users = getStore('users');
+  let usersChanged = false;
   if (!users['mock-user-1']) {
     users['mock-user-1'] = { id: 'mock-user-1', email: 'parent@example.com', full_name: 'Parent User', popia_consent_accepted: true };
+    usersChanged = true;
+  }
+  if (!users['admin-owner']) {
+    users['admin-owner'] = { id: 'admin-owner', email: 'findmewebapp7@gmail.com', full_name: 'Lead Admin', popia_consent_accepted: true };
+    usersChanged = true;
+  }
+  if (usersChanged) {
     setStore('users', users);
   }
 
