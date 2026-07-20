@@ -41,7 +41,7 @@ if (hasRealSupabase && !isForcedMock()) {
 
   // Seed demo data if missing or has old default number
   const tags = getStore('tags');
-  if (!tags['demo01'] || !tags['demo02'] || tags['demo01'].parent_whatsapp === '+27821234567') {
+  if (!tags['demo01'] || !tags['demo02'] || !tags['aysfhu'] || tags['demo01'].parent_whatsapp === '+27821234567') {
     tags['demo01'] = {
       tag_id: 'demo01',
       owner_id: 'mock-user-1',
@@ -65,6 +65,40 @@ if (hasRealSupabase && !isForcedMock()) {
       custom_label: 'Child-2-Wristband',
       created_at: new Date().toISOString(),
       claimed_at: new Date().toISOString()
+    };
+    // Seed pre-generated unclaimed codes for parent activation tests
+    tags['aysfhu'] = {
+      tag_id: 'aysfhu',
+      owner_id: null,
+      child_name: '',
+      avatar: '👧',
+      parent_whatsapp: '',
+      contacts: [],
+      medical: { allergies: '', conditions: '', notes: '' },
+      custom_label: 'Unclaimed Wristband A',
+      created_at: new Date().toISOString()
+    };
+    tags['lotap1'] = {
+      tag_id: 'lotap1',
+      owner_id: null,
+      child_name: '',
+      avatar: '👧',
+      parent_whatsapp: '',
+      contacts: [],
+      medical: { allergies: '', conditions: '', notes: '' },
+      custom_label: 'Unclaimed Wristband 1',
+      created_at: new Date().toISOString()
+    };
+    tags['lotap2'] = {
+      tag_id: 'lotap2',
+      owner_id: null,
+      child_name: '',
+      avatar: '👦',
+      parent_whatsapp: '',
+      contacts: [],
+      medical: { allergies: '', conditions: '', notes: '' },
+      custom_label: 'Unclaimed Wristband 2',
+      created_at: new Date().toISOString()
     };
     setStore('tags', tags);
   }
@@ -154,6 +188,13 @@ if (hasRealSupabase && !isForcedMock()) {
         // Save a mock reset state in localStorage to verify/test
         localStorage.setItem('findme_mock_reset_email', email);
         return { data: {}, error: null };
+      },
+      signInWithOAuth: async ({ provider, options }: { provider: string; options?: any }) => {
+        await delay();
+        currentUser = { id: 'admin-owner', email: 'findmewebapp7@gmail.com', full_name: 'Lead Admin', popia_consent_accepted: true };
+        localStorage.setItem('findme_session', 'true');
+        localStorage.setItem('findme_current_user', JSON.stringify(currentUser));
+        return { data: { provider, url: options?.redirectTo || '/' }, error: null };
       },
       updateUser: async (attributes: { password?: string; data?: any }) => {
         await delay();

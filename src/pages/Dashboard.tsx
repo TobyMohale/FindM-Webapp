@@ -130,7 +130,7 @@ export default function Dashboard() {
     // Check if we arrived via a claim route (/claim/:tag_id)
     const match = location.pathname.match(/^\/claim\/(.+)$/);
     if (match && match[1]) {
-      const code = match[1].toUpperCase();
+      const code = match[1].toLowerCase();
       setTagToClaim(code);
       setSignupTagId(code);
       setIsSignUp(true); // Guide them straight to sign up
@@ -239,10 +239,6 @@ export default function Dashboard() {
       setAuthMsg('You must accept the POPIA data privacy consent to proceed.');
       return;
     }
-    if (signupTagId && signupTagId.trim().length !== 6) {
-      setAuthMsg('Wristband Tag Code must be exactly 6 characters long.');
-      return;
-    }
     setAuthMsg('');
     setSignUpStep(2);
   };
@@ -287,65 +283,41 @@ export default function Dashboard() {
       return;
     }
 
-    // 2. Generate or claim the 6-character tag ID
-    const newTagId = signupTagId.trim().toUpperCase() || generateId();
+    const newTagId = signupTagId.trim().toLowerCase();
     
-    // Check if the tag already exists in the DB
-    const { data: existingTagData } = await supabase.from('tags').select('tag_id, owner_id').eq('tag_id', newTagId);
-    
-    let dbSuccess = false;
-    if (existingTagData && existingTagData.length > 0) {
-      const existingTag = existingTagData[0];
-      if (existingTag.owner_id && existingTag.owner_id !== registeredUser.id) {
-        setAuthMsg(`This Tag Code (${newTagId}) has already been registered to another parent.`);
-        setAuthLoading(false);
-        return;
-      }
+    let dbSuccess = true;
+    if (newTagId) {
+      // Check if the tag already exists in the DB
+      const { data: existingTagData } = await supabase.from('tags').select('tag_id, owner_id').eq('tag_id', newTagId);
       
-      // Update existing unclaimed tag
-      const { error: updateError } = await supabase.from('tags').update({
-        owner_id: registeredUser.id,
-        child_name: childName || 'Emma',
-        avatar: '👧',
-        parent_whatsapp: parentPhone,
-        claimed_at: new Date().toISOString()
-      }).eq('tag_id', newTagId);
-      
-      if (!updateError) {
-        dbSuccess = true;
-      } else {
-        console.error('Error updating existing tag:', updateError);
-        setAuthMsg(`Database Error updating tag: ${updateError.message || JSON.stringify(updateError)}. Please make sure you have executed the complete schema.sql script in your Supabase SQL Editor.`);
-        setAuthLoading(false);
-        return;
-      }
-    } else {
-      // Insert brand new tag
-      const tagPayload = {
-        tag_id: newTagId,
-        owner_id: registeredUser.id,
-        child_name: childName || 'Emma',
-        avatar: '👧',
-        parent_whatsapp: parentPhone,
-        contacts: [],
-        medical: { allergies: '', conditions: '', notes: '' },
-        claimed_at: new Date().toISOString()
-      };
-      
-      const { error: insertError } = await supabase.from('tags').insert(tagPayload);
-      if (!insertError) {
-        dbSuccess = true;
-      } else {
-        console.error('Error inserting new tag:', insertError);
-        let errorDetail = insertError.message || JSON.stringify(insertError);
-        
-        if (insertError.message?.includes('violates foreign key constraint') && insertError.message?.includes('profiles')) {
-          errorDetail = "Foreign key violation. This means your profile was not created in the 'public.profiles' table. This usually happens if the trigger function crashed because your 'profiles' table is missing the 'popia_consent_accepted' column. To fix this, run this SQL in your Supabase SQL Editor: 'alter table public.profiles add column if not exists popia_consent_accepted boolean default false not null;' then try registering again.";
-        } else if (insertError.message?.includes('column') && insertError.message?.includes('does not exist')) {
-          errorDetail = `Missing column. Your tags table is missing some required columns (e.g. avatar, contacts, medical, or claimed_at). Please execute the complete schema.sql file in your Supabase SQL Editor to ensure all tables are up to date.`;
+      dbSuccess = false;
+      if (existingTagData && existingTagData.length > 0) {
+        const existingTag = existingTagData[0];
+        if (existingTag.owner_id && existingTag.owner_id !== registeredUser.id) {
+          setAuthMsg(`This Tag Code (${newTagId}) has already been registered to another parent.`);
+          setAuthLoading(false);
+          return;
         }
         
-        setAuthMsg(`Error inserting new tag: ${errorDetail}`);
+        // Update existing unclaimed tag
+        const { error: updateError } = await supabase.from('tags').update({
+          owner_id: registeredUser.id,
+          child_name: childName || 'Emma',
+          avatar: '👧',
+          parent_whatsapp: parentPhone,
+          claimed_at: new Date().toISOString()
+        }).eq('tag_id', newTagId);
+        
+        if (!updateError) {
+          dbSuccess = true;
+        } else {
+          console.error('Error updating existing tag:', updateError);
+          setAuthMsg(`Database Error updating tag: ${updateError.message || JSON.stringify(updateError)}. Please make sure you have executed the complete schema.sql script in your Supabase SQL Editor.`);
+          setAuthLoading(false);
+          return;
+        }
+      } else {
+        setAuthMsg(`Invalid Code (${newTagId}). This wristband code has not been generated by the administrator. Parents cannot create their own codes.`);
         setAuthLoading(false);
         return;
       }
@@ -360,7 +332,7 @@ export default function Dashboard() {
             parent_email: email,
             parent_phone: parentPhone,
             child_name: childName || 'Emma',
-            tag_id: newTagId
+            tag_id: newTagId || undefined
           })
         });
       } catch (err) {
@@ -385,25 +357,72 @@ export default function Dashboard() {
   };
 
   const handleClaimTag = async () => {
-    if (!tagToClaim) return;
-    setSaving(true);
-    // Attempt to update where owner_id is null
-    const { data, error } = await supabase.from('tags').update({ owner_id: user.id }).eq('tag_id', tagToClaim);
-    
-    if (error) {
-      alert('Could not claim tag. It may be invalid or already claimed.');
-    } else {
-      setTagToClaim('');
-      // Refresh list
-      const { data: newTags } = await supabase.from('tags').select('*').eq('owner_id', user.id);
-      if (newTags) {
-        setTags(newTags);
-        const claimedTag = newTags.find((t: any) => t.tag_id === tagToClaim) || newTags[newTags.length - 1];
-        if (claimedTag) loadTagForEdit(claimedTag);
-      }
+    const cleanTagId = tagToClaim.trim().toLowerCase();
+    if (!cleanTagId) return;
+    if (cleanTagId.length !== 6) {
+      alert('Wristband Tag Code must be exactly 6 characters.');
+      return;
     }
-    setSaving(false);
-    navigate('/dashboard', { replace: true });
+    setSaving(true);
+
+    try {
+      // 1. Check if the tag exists and is unclaimed
+      const { data: tagData, error: tagError } = await supabase
+        .from('tags')
+        .select('tag_id, owner_id')
+        .eq('tag_id', cleanTagId);
+
+      if (tagError) {
+        alert('Verification error: ' + tagError.message);
+        setSaving(false);
+        return;
+      }
+
+      if (!tagData || tagData.length === 0) {
+        alert(`Invalid Code (${cleanTagId}). This wristband code has not been generated by the administrator. Parents cannot create their own codes.`);
+        setSaving(false);
+        return;
+      }
+
+      const existingTag = tagData[0];
+      if (existingTag.owner_id && existingTag.owner_id !== user.id) {
+        alert(`This Wristband Code (${cleanTagId}) has already been claimed by another parent.`);
+        setSaving(false);
+        return;
+      }
+
+      // 2. Claim the pre-generated tag by updating its owner_id and claimed_at
+      const { error: claimError } = await supabase
+        .from('tags')
+        .update({
+          owner_id: user.id,
+          child_name: 'Emma', // Default placeholder name
+          avatar: '👧',
+          claimed_at: new Date().toISOString()
+        })
+        .eq('tag_id', cleanTagId);
+
+      if (claimError) {
+        alert('Could not claim tag: ' + claimError.message);
+      } else {
+        setTagToClaim('');
+        // Refresh list
+        const { data: newTags } = await supabase.from('tags').select('*').eq('owner_id', user.id);
+        if (newTags) {
+          setTags(newTags);
+          const claimedTag = newTags.find((t: any) => t.tag_id === cleanTagId);
+          if (claimedTag) {
+            loadTagForEdit(claimedTag);
+          }
+        }
+        alert(`Success! Wristband Code ${cleanTagId} has been successfully claimed and bound to your account.`);
+      }
+    } catch (err: any) {
+      alert('Error: ' + (err.message || err));
+    } finally {
+      setSaving(false);
+      navigate('/dashboard', { replace: true });
+    }
   };
 
   const handleReleaseTag = async () => {
@@ -684,18 +703,7 @@ export default function Dashboard() {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">6-Character Wristband Code (Optional)</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. AB12CD (leave blank to auto-generate)" 
-                      maxLength={6}
-                      value={signupTagId}
-                      onChange={e => setSignupTagId(e.target.value.toUpperCase())}
-                      className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-sm text-[#051650] font-bold uppercase tracking-wider transition-all placeholder:normal-case placeholder:font-medium" 
-                    />
-                    <span className="text-[10px] text-slate-400 mt-1 block">If your wristband came with a code printed on it, enter it here to claim it.</span>
-                  </div>
+
 
                   <div className="flex items-start gap-3 bg-slate-50 p-3.5 border border-slate-200 rounded-2xl">
                     <input 
@@ -1011,12 +1019,12 @@ export default function Dashboard() {
               : 'bg-white border-slate-200 text-slate-800'
           }`}>
             <h3 className={`text-xs font-bold uppercase mb-3 ${theme === 'dark' ? 'text-[#FFCFF1]' : 'text-slate-600'}`}>Claim a new tag</h3>
-            <p className="text-xs text-slate-400 mb-3 leading-relaxed">Have a new physical tag? Enter the 6-character code here to bind it to your account.</p>
+            <p className="text-xs text-slate-400 mb-3 leading-relaxed">Enter the unique 6-character code that came with your physical wristband to bind it to your account.</p>
             <input 
               type="text" 
               placeholder="e.g. abc123" 
               value={tagToClaim}
-              onChange={(e) => setTagToClaim(e.target.value)}
+              onChange={(e) => setTagToClaim(e.target.value.toLowerCase())}
               className={`w-full p-2 text-sm rounded-lg mb-3 font-mono focus:outline-none focus:ring-2 transition-all ${
                 theme === 'dark' 
                   ? 'bg-slate-950/60 border border-white/10 text-white focus:ring-[#C54B8C]' 
@@ -1330,7 +1338,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Print Label Guide Card */}
+                  {/* Wristband Activation Guide Card */}
                   <div className={`border rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 ${
                     theme === 'dark' 
                       ? 'bg-slate-950/40 border-slate-800 text-white' 
@@ -1338,10 +1346,10 @@ export default function Dashboard() {
                   }`}>
                     <div>
                       <h4 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 mb-1 ${theme === 'dark' ? 'text-[#FFCFF1]' : 'text-[#051650]'}`}>
-                        <span>🖨️</span> Physical Tag Labeling Guide
+                        <span>🏷️</span> Wristband Activation Guide
                       </h4>
                       <p className="text-[11px] text-slate-400 mb-3">
-                        How to label your physical NFC tag with the 6-character code to prevent mix-ups.
+                        Every physical LoTap wristband comes pre-printed with a unique, pre-generated 6-character ID code. This is not optional.
                       </p>
                     </div>
 
@@ -1349,24 +1357,24 @@ export default function Dashboard() {
                       <div className="flex items-start gap-2.5 text-[11px]">
                         <span className="font-extrabold text-[#C54B8C] bg-[#FFCFF1]/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">1</span>
                         <div>
-                          <p className="font-bold leading-none">Print/Write clearly</p>
-                          <p className="text-slate-400 mt-0.5">Write <span className="font-mono font-bold text-[#C54B8C] bg-[#FFCFF1]/10 px-1 rounded">{formData.tag_id}</span> on a small sticker or a label maker tape.</p>
+                          <p className="font-bold leading-none">Find the Pre-printed Code</p>
+                          <p className="text-slate-400 mt-0.5">Locate the permanent 6-character ID (e.g. <span className="font-mono font-bold text-[#C54B8C] bg-[#FFCFF1]/10 px-1 rounded">{formData.tag_id}</span>) printed on the backside of your physical silicone wristband housing.</p>
                         </div>
                       </div>
 
                       <div className="flex items-start gap-2.5 text-[11px]">
                         <span className="font-extrabold text-[#C54B8C] bg-[#FFCFF1]/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
                         <div>
-                          <p className="font-bold leading-none">Apply to Band Backside</p>
-                          <p className="text-slate-400 mt-0.5">Affix the sticker to the flat underside of the silicone bracelet housing the NFC chip.</p>
+                          <p className="font-bold leading-none">Claim Your Code</p>
+                          <p className="text-slate-400 mt-0.5">Under the "Your Tags" list on the left, click "Claim a new tag" and enter this unique code to securely bind it to your profile.</p>
                         </div>
                       </div>
 
                       <div className="flex items-start gap-2.5 text-[11px]">
                         <span className="font-extrabold text-[#C54B8C] bg-[#FFCFF1]/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">3</span>
                         <div>
-                          <p className="font-bold leading-none">Apply Waterproof Shield</p>
-                          <p className="text-slate-400 mt-0.5">Cover with a piece of clear protective tape to protect the print against water & scuffs.</p>
+                          <p className="font-bold leading-none">Verify by Tapping</p>
+                          <p className="text-slate-400 mt-0.5">Tap the physical NFC chip with your phone or scan the QR code to verify it displays your child's medical information correctly.</p>
                         </div>
                       </div>
                     </div>
@@ -1374,8 +1382,8 @@ export default function Dashboard() {
                     <div className={`mt-3 p-2 rounded-xl flex items-center gap-2 border text-center justify-center ${
                       theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
                     }`}>
-                      <span className="text-xs">🏷️</span>
-                      <span className="text-[10px] font-bold text-slate-400">Wristband ID Reference Code:</span>
+                      <span className="text-xs">🔑</span>
+                      <span className="text-[10px] font-bold text-slate-400">Your Registered Wristband Code:</span>
                       <span className="font-mono text-xs text-[#C54B8C] font-black tracking-wider">{formData.tag_id}</span>
                     </div>
                   </div>
