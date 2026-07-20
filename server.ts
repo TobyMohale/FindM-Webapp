@@ -30,7 +30,10 @@ async function startServer() {
   // API route to get current Resend configuration status
   app.get("/api/resend-status", (req, res) => {
     const hasKey = Boolean(process.env.RESEND_API_KEY);
-    const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+    const rawFromEmail = process.env.RESEND_FROM_EMAIL;
+    const fromEmail = (rawFromEmail && rawFromEmail !== "onboarding@resend.dev")
+      ? rawFromEmail
+      : "alerts@lotap.co.za";
     res.json({
       configured: hasKey,
       fromEmail,
@@ -107,10 +110,11 @@ async function startServer() {
       const apiKey = process.env.RESEND_API_KEY;
       if (apiKey) {
         const resend = getResendClient();
-        const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
-        const toEmail = fromEmail === "onboarding@resend.dev"
-          ? (process.env.RESEND_TEST_RECIPIENT || parent_email)
-          : parent_email;
+        const rawFromEmail = process.env.RESEND_FROM_EMAIL;
+        const fromEmail = (rawFromEmail && rawFromEmail !== "onboarding@resend.dev")
+          ? rawFromEmail
+          : "alerts@lotap.co.za";
+        const toEmail = parent_email;
         if (fromEmail === "onboarding@resend.dev") {
           usedSandbox = true;
         }
@@ -212,10 +216,11 @@ async function startServer() {
       const apiKey = process.env.RESEND_API_KEY;
       if (apiKey) {
         const resend = getResendClient();
-        const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
-        const toEmail = fromEmail === "onboarding@resend.dev"
-          ? (process.env.RESEND_TEST_RECIPIENT || parent_email)
-          : parent_email;
+        const rawFromEmail = process.env.RESEND_FROM_EMAIL;
+        const fromEmail = (rawFromEmail && rawFromEmail !== "onboarding@resend.dev")
+          ? rawFromEmail
+          : "alerts@lotap.co.za";
+        const toEmail = parent_email;
         if (fromEmail === "onboarding@resend.dev") {
           usedSandbox = true;
         }
@@ -321,10 +326,11 @@ async function startServer() {
       const apiKey = process.env.RESEND_API_KEY;
       if (apiKey) {
         const resend = getResendClient();
-        const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
-        const toEmail = fromEmail === "onboarding@resend.dev"
-          ? (process.env.RESEND_TEST_RECIPIENT || parent_email)
-          : parent_email;
+        const rawFromEmail = process.env.RESEND_FROM_EMAIL;
+        const fromEmail = (rawFromEmail && rawFromEmail !== "onboarding@resend.dev")
+          ? rawFromEmail
+          : "alerts@lotap.co.za";
+        const toEmail = parent_email;
         if (fromEmail === "onboarding@resend.dev") {
           usedSandbox = true;
         }
@@ -427,10 +433,11 @@ async function startServer() {
       const apiKey = process.env.RESEND_API_KEY;
       if (apiKey) {
         const resend = getResendClient();
-        const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
-        const toEmail = fromEmail === "onboarding@resend.dev"
-          ? (process.env.RESEND_TEST_RECIPIENT || parent_email)
-          : parent_email;
+        const rawFromEmail = process.env.RESEND_FROM_EMAIL;
+        const fromEmail = (rawFromEmail && rawFromEmail !== "onboarding@resend.dev")
+          ? rawFromEmail
+          : "alerts@lotap.co.za";
+        const toEmail = parent_email;
         if (fromEmail === "onboarding@resend.dev") {
           usedSandbox = true;
         }
@@ -441,6 +448,65 @@ async function startServer() {
           subject,
           html
         });
+
+        // Automatically send a registration confirmation alert to the LoTap administrators!
+        const adminRecipients = ["findmewebapp7@gmail.com", "johannesburgwebstudio@gmail.com"];
+
+        const adminSubject = `📢 NEW REGISTRATION: ${child_name}'s Profile Linked (${tag_id})`;
+        const adminHtml = `
+          <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #dce6f5; border-radius: 16px; background-color: #f8fafc; color: #0f172a;">
+            <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #051650; padding-bottom: 12px;">
+              <span style="font-size: 28px;">📢</span>
+              <h2 style="color: #051650; margin: 6px 0 0 0; font-size: 20px; font-weight: 800; text-transform: uppercase; letter-spacing: -0.015em;">LoTap Admin Portal Alert</h2>
+              <p style="color: #64748b; font-size: 11px; font-weight: bold; margin: 2px 0 0 0; text-transform: uppercase;">New User Account Connected</p>
+            </div>
+            
+            <p style="font-size: 14px; line-height: 1.5; color: #334155;">
+              A parent has successfully created a secure account and linked their child's safety wristband on the platform.
+            </p>
+            
+            <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px; background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden;">
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 12px; font-weight: 600; color: #64748b;">Parent Email:</td>
+                <td style="padding: 12px; font-weight: 700; color: #051650; text-align: right;">${parent_email}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 12px; font-weight: 600; color: #64748b;">Contact / WhatsApp:</td>
+                <td style="padding: 12px; font-weight: 700; color: #051650; text-align: right;">${parent_phone || 'Not Provided'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 12px; font-weight: 600; color: #64748b;">Child Name:</td>
+                <td style="padding: 12px; font-weight: 700; color: #c54b8c; text-align: right;">👧 ${child_name}</td>
+              </tr>
+              <tr>
+                <td style="padding: 12px; font-weight: 600; color: #64748b;">Wristband Code (Tag ID):</td>
+                <td style="padding: 12px; font-weight: 700; color: #051650; text-align: right; font-family: monospace; font-size: 14px;">${tag_id}</td>
+              </tr>
+            </table>
+
+            <div style="background-color: #fffbeb; border: 1px solid #fef3c7; padding: 12px; border-radius: 8px; text-align: center; margin-top: 16px;">
+              <p style="margin: 0; font-size: 11px; line-height: 1.4; color: #b45309; font-weight: 600;">
+                Action Required: Check this child's medical info and profile label inside your secure Admin Dashboard.
+              </p>
+            </div>
+
+            <div style="text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 14px; margin-top: 20px;">
+              LoTap Admin Notification Service &copy; 2026
+            </div>
+          </div>
+        `;
+
+        try {
+          // Send confirmation alert directly to the admin addresses
+          await resend.emails.send({
+            from: `LoTap Admin Alerts <${fromEmail}>`,
+            to: adminRecipients,
+            subject: adminSubject,
+            html: adminHtml
+          });
+        } catch (adminErr) {
+          console.error("Failed to send administrative signup confirmation:", adminErr);
+        }
       }
 
       res.json({

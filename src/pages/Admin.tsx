@@ -52,6 +52,17 @@ export default function Admin() {
 
   const [orders, setOrders] = useState<any[]>([]);
   const [updatingOrderStatus, setUpdatingOrderStatus] = useState<Record<string, boolean>>({});
+  const [copiedRecords, setCopiedRecords] = useState<Record<string, boolean>>({});
+  const [resendStatus, setResendStatus] = useState<{ configured: boolean; fromEmail: string } | null>(null);
+
+  const handleCopy = (key: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    triggerHaptic();
+    setCopiedRecords(prev => ({ ...prev, [key]: true }));
+    setTimeout(() => {
+      setCopiedRecords(prev => ({ ...prev, [key]: false }));
+    }, 2000);
+  };
 
   const getStoredPasscode = () => {
     return localStorage.getItem('findme_admin_passcode') || 'Findme_Pw101';
@@ -70,6 +81,18 @@ export default function Admin() {
     navigate('/');
   };
 
+  const fetchResendStatus = async () => {
+    try {
+      const res = await fetch('/api/resend-status');
+      if (res.ok) {
+        const data = await res.json();
+        setResendStatus(data);
+      }
+    } catch (e) {
+      console.error('Error fetching Resend status:', e);
+    }
+  };
+
   useEffect(() => {
     const checkAdmin = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -84,6 +107,7 @@ export default function Admin() {
     fetchMetrics();
     fetchTagsList();
     fetchOrders();
+    fetchResendStatus();
   }, []);
 
   const fetchOrders = async () => {
@@ -718,6 +742,183 @@ export default function Admin() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* GoDaddy Domain & Resend DNS Configuration Center */}
+      <div className={`p-6 rounded-lg border mt-6 animate-fade-in ${
+        resendStatus?.configured && resendStatus.fromEmail !== 'onboarding@resend.dev'
+          ? "bg-emerald-50/40 border-emerald-200"
+          : "bg-amber-50/50 border-amber-200"
+      }`}>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-[#051650] flex items-center gap-2">
+              <span>🌍</span> GoDaddy Domain & Resend DNS Configuration
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Configure your custom domain <strong className="text-[#051650]">lotap.co.za</strong> in GoDaddy to authorize automated welcome emails and scanner alerts.
+            </p>
+          </div>
+          {resendStatus?.configured && resendStatus.fromEmail !== 'onboarding@resend.dev' ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+              ✅ Domain Active & Verified
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200 animate-pulse">
+              ⚠️ Verification Pending
+            </span>
+          )}
+        </div>
+
+        {resendStatus?.configured && resendStatus.fromEmail !== 'onboarding@resend.dev' ? (
+          <div className="bg-white p-5 rounded-xl border border-emerald-100 mb-5 text-xs space-y-3 shadow-sm">
+            <p className="font-bold text-emerald-800 flex items-center gap-1.5">
+              <span>🎉</span> Excellent news! Your Domain is Fully Verified
+            </p>
+            <p className="text-slate-600 leading-relaxed font-medium">
+              We detected that <strong className="text-emerald-950 font-extrabold">lotap.co.za</strong> is verified on Resend & Netlify. Automated safety notifications, welcome signup confirmation alerts, and finder scans are now sent from <code className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-mono font-bold">alerts@lotap.co.za</code> directly to the parents' real inbox!
+            </p>
+          </div>
+        ) : (
+          <div className="bg-white p-4 rounded-xl border border-amber-100 mb-5 text-xs space-y-3 shadow-sm">
+            <p className="font-bold text-[#051650] flex items-center gap-1">
+              <span>💡</span> GoDaddy DNS Manager Rule (Critical):
+            </p>
+            <p className="text-slate-600 leading-relaxed font-medium">
+              When entering the <strong className="text-slate-800">"Host / Name"</strong> values below inside GoDaddy, only enter the prefix (e.g. enter <code className="bg-slate-100 text-[#C54B8C] px-1 py-0.5 rounded font-mono font-bold">resend._domainkey</code> instead of the full <code className="bg-slate-100 text-slate-500 px-1 py-0.5 rounded font-mono">resend._domainkey.lotap.co.za</code>). GoDaddy automatically appends your domain at the end of the records!
+            </p>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          {/* DKIM */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <span className="text-xs font-black text-[#051650] uppercase tracking-wider">1. DKIM Record (DomainKeys Identified Mail)</span>
+              <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded border">Type: TXT</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Host / Name</span>
+                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-mono text-[11px] font-bold text-[#051650]">
+                  <span className="truncate mr-2">resend._domainkey</span>
+                  <button onClick={() => handleCopy('dkim_host', 'resend._domainkey')} className="text-xs text-[#C54B8C] hover:text-[#B53389] font-sans font-black shrink-0">
+                    {copiedRecords['dkim_host'] ? 'Copied! ✓' : 'Copy Prefix'}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Value / Points To</span>
+                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-mono text-[10px] text-slate-600">
+                  <span className="truncate mr-2 flex-1">p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDKb7Ral3AixASNa6aZBCoTAusEeaJh+T0NCglCIfJg5bEE5ZQQOg3h6SNFf1ua16FcsOIl8fAiU6yZvEkyDAkicIqrEqCOWzWv+weZ8VHNrnuNq5/SQbVrIHS0358vl3NuYDr1chHKAVXCxQFViAIRgDntO2gvVOSRNFG0bkwzOwIDAQAB</span>
+                  <button onClick={() => handleCopy('dkim_value', 'p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDKb7Ral3AixASNa6aZBCoTAusEeaJh+T0NCglCIfJg5bEE5ZQQOg3h6SNFf1ua16FcsOIl8fAiU6yZvEkyDAkicIqrEqCOWzWv+weZ8VHNrnuNq5/SQbVrIHS0358vl3NuYDr1chHKAVXCxQFViAIRgDntO2gvVOSRNFG0bkwzOwIDAQAB')} className="text-xs text-[#C54B8C] hover:text-[#B53389] font-sans font-black shrink-0">
+                    {copiedRecords['dkim_value'] ? 'Copied! ✓' : 'Copy Value'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* SPF MX */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <span className="text-xs font-black text-[#051650] uppercase tracking-wider">2. SPF MX Record (Mail Exchanger)</span>
+              <div className="flex gap-2">
+                <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded border">Type: MX</span>
+                <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100">Priority: 10</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Host / Name</span>
+                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-mono text-[11px] font-bold text-[#051650]">
+                  <span className="truncate mr-2">send</span>
+                  <button onClick={() => handleCopy('mx_host', 'send')} className="text-xs text-[#C54B8C] hover:text-[#B53389] font-sans font-black shrink-0">
+                    {copiedRecords['mx_host'] ? 'Copied! ✓' : 'Copy Prefix'}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Value / Points To</span>
+                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-600">
+                  <span className="truncate mr-2 flex-1">feedback-smtp.eu-west-1.amazonses.com</span>
+                  <button onClick={() => handleCopy('mx_value', 'feedback-smtp.eu-west-1.amazonses.com')} className="text-xs text-[#C54B8C] hover:text-[#B53389] font-sans font-black shrink-0">
+                    {copiedRecords['mx_value'] ? 'Copied! ✓' : 'Copy Value'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* SPF TXT */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <span className="text-xs font-black text-[#051650] uppercase tracking-wider">3. SPF TXT Record (Sender Policy Framework)</span>
+              <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded border">Type: TXT</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Host / Name</span>
+                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-mono text-[11px] font-bold text-[#051650]">
+                  <span className="truncate mr-2">send</span>
+                  <button onClick={() => handleCopy('spf_host', 'send')} className="text-xs text-[#C54B8C] hover:text-[#B53389] font-sans font-black shrink-0">
+                    {copiedRecords['spf_host'] ? 'Copied! ✓' : 'Copy Prefix'}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Value / Points To</span>
+                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-600">
+                  <span className="truncate mr-2 flex-1">v=spf1 include:amazonses.com ~all</span>
+                  <button onClick={() => handleCopy('spf_value', 'v=spf1 include:amazonses.com ~all')} className="text-xs text-[#C54B8C] hover:text-[#B53389] font-sans font-black shrink-0">
+                    {copiedRecords['spf_value'] ? 'Copied! ✓' : 'Copy Value'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* DMARC */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <span className="text-xs font-black text-[#051650] uppercase tracking-wider">4. DMARC Record (Domain-based Message Authentication) - Highly Recommended</span>
+              <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded border">Type: TXT</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Host / Name</span>
+                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-mono text-[11px] font-bold text-[#051650]">
+                  <span className="truncate mr-2">_dmarc</span>
+                  <button onClick={() => handleCopy('dmarc_host', '_dmarc')} className="text-xs text-[#C54B8C] hover:text-[#B53389] font-sans font-black shrink-0">
+                    {copiedRecords['dmarc_host'] ? 'Copied! ✓' : 'Copy Prefix'}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Value / Points To</span>
+                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-600">
+                  <span className="truncate mr-2 flex-1">v=DMARC1; p=none;</span>
+                  <button onClick={() => handleCopy('dmarc_value', 'v=DMARC1; p=none;')} className="text-xs text-[#C54B8C] hover:text-[#B53389] font-sans font-black shrink-0">
+                    {copiedRecords['dmarc_value'] ? 'Copied! ✓' : 'Copy Value'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* GoDaddy Checklist */}
+        <div className="mt-5 p-5 bg-[#051650]/5 rounded-xl border border-[#051650]/10 text-xs">
+          <h4 className="font-bold text-[#051650] uppercase tracking-wider mb-3">⚙️ How to Add Records to GoDaddy:</h4>
+          <ol className="list-decimal pl-5 space-y-2 text-slate-600 font-semibold leading-relaxed">
+            <li>Log into your <a href="https://dcc.godaddy.com/control/portfolio" target="_blank" rel="noopener noreferrer" className="text-[#C54B8C] hover:underline font-extrabold inline-flex items-center gap-0.5">GoDaddy Domain Manager ↗</a>.</li>
+            <li>Select your domain name <strong className="text-slate-800">lotap.co.za</strong> and navigate to the <strong className="text-slate-800">DNS Records</strong> page.</li>
+            <li>Click the <strong className="text-slate-800">"Add New Record"</strong> button.</li>
+            <li>Add each of the 4 entries in the panel above. Make sure the Types correspond to <code className="bg-slate-100 text-[#C54B8C] px-1 rounded font-bold">TXT</code> or <code className="bg-slate-100 text-[#C54B8C] px-1 rounded font-bold">MX</code>.</li>
+            <li>Keep the TTL as Default or <strong className="text-slate-800">1 Hour</strong> (3600s), then save.</li>
+            <li>Go back to your <a href="https://resend.com/domains" target="_blank" rel="noopener noreferrer" className="text-[#C54B8C] hover:underline font-extrabold">Resend Domain Settings ↗</a>, and click <strong className="text-slate-800">"Verify Domain"</strong>. Within a few minutes, GoDaddy will update and your domain status will change to verified green!</li>
+          </ol>
         </div>
       </div>
 
