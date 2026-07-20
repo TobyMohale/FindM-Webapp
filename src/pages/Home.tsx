@@ -271,7 +271,7 @@ export default function Home() {
                 <ul className="text-xs text-slate-600 space-y-2 list-disc pl-4 leading-relaxed font-medium">
                   <li>No subscriptions, download trackers, or monthly charges.</li>
                   <li>Hypoallergenic medical silicone, waterproof & sweatproof.</li>
-                  <li>Equipped with premium dual NFC and QR technologies.</li>
+                  <li>Equipped with premium NFC technology.</li>
                 </ul>
               </div>
             </div>

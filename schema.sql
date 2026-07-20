@@ -48,6 +48,8 @@ create table public.tags (
     contacts jsonb default '[]'::jsonb not null,
     medical jsonb default '{"allergies": "", "conditions": "", "notes": ""}'::jsonb not null,
     custom_label text, -- Custom label assigned by administrators (e.g. 'Child-1-Wristband')
+    scan_count integer default 0 not null,
+    last_scanned_at timestamp with time zone,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     claimed_at timestamp with time zone
 );
@@ -165,3 +167,20 @@ begin
     return generated_ids;
 end;
 $$ language plpgsql security definer;
+
+-- ==========================================
+-- 7. PUBLIC SCAN STATISTICS INCREMENT RPC
+-- ==========================================
+-- Security Definer function to safely increment scan count from the public Tap page without exposing general update permissions
+create or replace function public.increment_tag_scan(target_tag_id text)
+returns void
+language plpgsql
+security definer -- runs with privileges of function creator (admin)
+as $$
+begin
+    update public.tags
+    set scan_count = scan_count + 1,
+        last_scanned_at = timezone('utc'::text, now())
+    where tag_id = target_tag_id;
+end;
+$$;

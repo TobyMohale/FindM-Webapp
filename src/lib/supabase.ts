@@ -306,6 +306,17 @@ if (hasRealSupabase && !isForcedMock()) {
         setStore('tags', store);
         return { data: generated, error: null };
       }
+      if (fn === 'increment_tag_scan') {
+        const tagId = params.target_tag_id;
+        const store = getStore('tags');
+        if (store[tagId]) {
+          store[tagId].scan_count = (store[tagId].scan_count || 0) + 1;
+          store[tagId].last_scanned_at = new Date().toISOString();
+          setStore('tags', store);
+          return { data: store[tagId], error: null };
+        }
+        return { data: null, error: new Error('Tag not found') };
+      }
       return { data: null, error: new Error('RPC not implemented in mock') };
     }
   };

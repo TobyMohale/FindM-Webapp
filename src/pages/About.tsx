@@ -9,7 +9,7 @@ export default function About() {
   const faqs = [
     {
       q: "How does the LoTap wristband work?",
-      a: "Each physical LoTap wristband is equipped with a secure, waterproof NFC (Near Field Communication) chip and a unique printed 6-character code/QR code. In an emergency, any passerby or finder can simply tap their smartphone against the wristband (or scan the code) to immediately pull up the child's secure emergency contact card, without needing any special app installed."
+      a: "Each physical LoTap wristband is equipped with a secure, waterproof NFC (Near Field Communication) chip and a unique printed 6-character code. In an emergency, any passerby or finder can simply tap their smartphone against the wristband to immediately pull up the child's secure emergency contact card, without needing any special app installed."
     },
     {
       q: "Does the wristband track my child's location via GPS?",
@@ -25,7 +25,7 @@ export default function About() {
     },
     {
       q: "What devices are compatible with the wristband?",
-      a: "Almost all modern smartphones (including iPhones and Android devices) have built-in NFC scanners. For older devices that don't support NFC, the finder can quickly scan the QR code or enter the 6-character code directly at lotap.co.za to view the profile."
+      a: "Almost all modern smartphones (including iPhones and Android devices) have built-in NFC scanners. For older devices that don't support NFC, the finder can quickly enter the 6-character code directly at lotap.co.za to view the profile."
     }
   ];
 
@@ -146,7 +146,7 @@ export default function About() {
                 <div className="text-[#C54B8C] font-black text-sm uppercase">3. Scan & Reunite</div>
                 <h3 className="font-extrabold text-sm text-[#051650]">One-tap Scan</h3>
                 <p className="text-slate-500 text-xs leading-relaxed">
-                  A finder taps their phone against the band (or scans the QR). Your configured details load instantly so they can call you immediately.
+                  A finder taps their phone against the band. Your configured details load instantly so they can call you immediately.
                 </p>
               </div>
             </div>
@@ -177,7 +177,7 @@ export default function About() {
             </div>
             <div className="bg-white p-4 rounded-xl border border-slate-200/50 flex justify-between items-center">
               <span className="text-slate-500">Backup Option</span>
-              <span className="text-[#051650] font-extrabold text-right">Unique 6-character Code & QR Code</span>
+              <span className="text-[#051650] font-extrabold text-right">Unique 6-character Code</span>
             </div>
             <div className="bg-white p-4 rounded-xl border border-slate-200/50 flex justify-between items-center">
               <span className="text-slate-500">Security Architecture</span>

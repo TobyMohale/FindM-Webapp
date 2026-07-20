@@ -116,14 +116,11 @@ export default function TapView() {
               navigate(`/claim/${tagId}`, { replace: true });
             }
           } else {
-            // Increment scan count and update last scanned timestamp
+            // Increment scan count and update last scanned timestamp via secure RPC
             const newScanCount = (tag.scan_count || 0) + 1;
             const now = new Date().toISOString();
             
-            supabase.from('tags').update({
-              scan_count: newScanCount,
-              last_scanned_at: now
-            }).eq('tag_id', tag.tag_id).then(({ error }) => {
+            supabase.rpc('increment_tag_scan', { target_tag_id: tag.tag_id }).then(({ error }) => {
               if (error) console.error("Error incrementing scan count:", error);
             });
 
