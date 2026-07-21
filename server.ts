@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { Resend } from 'resend';
 
@@ -26,6 +27,53 @@ async function startServer() {
 
   // Middleware to parse JSON bodies
   app.use(express.json());
+
+  // --- SERVER-SIDE DB ENDPOINTS TO SYNC PRIVATE AND REGULAR TABS ---
+  let dbData: any = {
+    tags: {},
+    orders: [],
+    users: {
+      'mock-user-1': { id: 'mock-user-1', email: 'parent@example.com', full_name: 'Parent User', popia_consent_accepted: true },
+      'admin-owner': { id: 'admin-owner', email: 'findmewebapp7@gmail.com', full_name: 'Lead Admin', popia_consent_accepted: true }
+    }
+  };
+
+  const DB_FILE = path.join(process.cwd(), "db.json");
+
+  // Load database from file
+  if (fs.existsSync(DB_FILE)) {
+    try {
+      const raw = fs.readFileSync(DB_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        dbData = { ...dbData, ...parsed };
+      }
+    } catch (err) {
+      console.error("Error reading db.json, using defaults:", err);
+    }
+  }
+
+  const saveDb = () => {
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2), "utf-8");
+    } catch (err) {
+      console.error("Error writing db.json:", err);
+    }
+  };
+
+  // Get store collection
+  app.get("/api/mock-db/:key", (req, res) => {
+    const { key } = req.params;
+    res.json(dbData[key] || (key === 'orders' ? [] : {}));
+  });
+
+  // Set store collection or merge
+  app.post("/api/mock-db/:key", (req, res) => {
+    const { key } = req.params;
+    dbData[key] = req.body.data;
+    saveDb();
+    res.json({ success: true });
+  });
 
   // API route to get current Resend configuration status
   app.get("/api/resend-status", (req, res) => {

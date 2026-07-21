@@ -33,40 +33,40 @@ if (hasRealSupabase && !isForcedMock()) {
   const MOCK_DELAY = 300;
   const delay = () => new Promise(r => setTimeout(r, MOCK_DELAY));
 
-  const getStore = (key: string) => {
-    try { return JSON.parse(localStorage.getItem(`findme_${key}`) || '{}'); } 
-    catch { return {}; }
+  const getStore = async (key: string): Promise<any> => {
+    try {
+      const res = await fetch(`/api/mock-db/${key}`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn("Could not fetch from server db, falling back to local storage:", e);
+    }
+    try { return JSON.parse(localStorage.getItem(`findme_${key}`) || (key === 'orders' ? '[]' : '{}')); } 
+    catch { return key === 'orders' ? [] : {}; }
   };
-  const setStore = (key: string, val: any) => localStorage.setItem(`findme_${key}`, JSON.stringify(val));
 
-  // Initialize empty tag store to start from absolute zero
-  const tags = getStore('tags');
-  if (Object.keys(tags).length === 0) {
-    setStore('tags', {});
-  }
-
-  const users = getStore('users');
-  let usersChanged = false;
-  if (!users['mock-user-1']) {
-    users['mock-user-1'] = { id: 'mock-user-1', email: 'parent@example.com', full_name: 'Parent User', popia_consent_accepted: true };
-    usersChanged = true;
-  }
-  if (!users['admin-owner']) {
-    users['admin-owner'] = { id: 'admin-owner', email: 'findmewebapp7@gmail.com', full_name: 'Lead Admin', popia_consent_accepted: true };
-    usersChanged = true;
-  }
-  if (usersChanged) {
-    setStore('users', users);
-  }
+  const setStore = async (key: string, val: any): Promise<void> => {
+    try {
+      await fetch(`/api/mock-db/${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: val })
+      });
+    } catch (e) {
+      console.warn("Could not save to server db, falling back to local storage:", e);
+    }
+    localStorage.setItem(`findme_${key}`, JSON.stringify(val));
+  };
 
   // Simulate currently logged in user
-  let currentUser = null;
+  let currentUser: any = null;
   if (localStorage.getItem('findme_session')) {
     const saved = localStorage.getItem('findme_current_user');
     if (saved) {
-      try { currentUser = JSON.parse(saved); } catch { currentUser = users['mock-user-1']; }
+      try { currentUser = JSON.parse(saved); } catch { currentUser = { id: 'mock-user-1', email: 'parent@example.com', full_name: 'Parent User', popia_consent_accepted: true }; }
     } else {
-      currentUser = users['mock-user-1'];
+      currentUser = { id: 'mock-user-1', email: 'parent@example.com', full_name: 'Parent User', popia_consent_accepted: true };
     }
   }
 
@@ -111,13 +111,13 @@ if (hasRealSupabase && !isForcedMock()) {
       },
       signInWithPassword: async ({ email, password }: { email: string; password?: string }) => {
         await delay();
-        const usersStore: Record<string, any> = getStore('users');
+        const usersStore: Record<string, any> = await getStore('users');
         let matchedUser = (Object.values(usersStore) as any[]).find((u: any) => u.email === email);
         if (!matchedUser) {
           // Auto register on mock if not exists, or just simulate successful login
           matchedUser = { id: 'mock-' + Math.random().toString(36).substr(2, 9), email, popia_consent_accepted: true };
           usersStore[matchedUser.id] = matchedUser;
-          setStore('users', usersStore);
+          await setStore('users', usersStore);
         }
         currentUser = matchedUser;
         localStorage.setItem('findme_session', 'true');
@@ -126,14 +126,14 @@ if (hasRealSupabase && !isForcedMock()) {
       },
       signUp: async ({ email, password }: { email: string; password?: string }) => {
         await delay();
-        const usersStore: Record<string, any> = getStore('users');
+        const usersStore: Record<string, any> = await getStore('users');
         let matchedUser = (Object.values(usersStore) as any[]).find((u: any) => u.email === email);
         if (matchedUser) {
           return { data: { user: null }, error: new Error('User already exists.') };
         }
         const newUser = { id: 'mock-' + Math.random().toString(36).substr(2, 9), email, popia_consent_accepted: true };
         usersStore[newUser.id] = newUser;
-        setStore('users', usersStore);
+        await setStore('users', usersStore);
         currentUser = newUser;
         localStorage.setItem('findme_session', 'true');
         localStorage.setItem('findme_current_user', JSON.stringify(currentUser));
@@ -148,7 +148,7 @@ if (hasRealSupabase && !isForcedMock()) {
       },
       resetPasswordForEmail: async (email: string, options?: any) => {
         await delay();
-        const usersStore: Record<string, any> = getStore('users');
+        const usersStore: Record<string, any> = await getStore('users');
         const matchedUser = (Object.values(usersStore) as any[]).find((u: any) => u.email === email);
         if (!matchedUser) {
           return { data: null, error: new Error('No user found with this email address.') };
@@ -193,7 +193,7 @@ if (hasRealSupabase && !isForcedMock()) {
             },
             then: async function(onfulfilled: any) {
               await delay();
-              const store = getStore(actualTable);
+              const store = await getStore(actualTable);
               let items = Object.values(store);
               if (this._col) {
                 if (this._col === 'tag_id' || this._col === 'id') {
@@ -219,11 +219,11 @@ if (hasRealSupabase && !isForcedMock()) {
         update: (payload: any) => ({
           eq: async (col: string, val: string) => {
             await delay();
-            const store = getStore(actualTable);
+            const store = await getStore(actualTable);
             if (col === 'tag_id' || col === 'id') {
               if (store[val]) {
                 store[val] = { ...store[val], ...payload };
-                setStore(actualTable, store);
+                await setStore(actualTable, store);
                 notifyMockListeners(actualTable, 'UPDATE', store[val]);
                 return { data: [store[val]], error: null };
               }
@@ -236,7 +236,7 @@ if (hasRealSupabase && !isForcedMock()) {
                   notifyMockListeners(actualTable, 'UPDATE', store[k]);
                 }
               }
-              setStore(actualTable, store);
+              await setStore(actualTable, store);
               return { data: updated, error: null };
             }
             return { data: null, error: new Error('Record not found') };
@@ -244,7 +244,7 @@ if (hasRealSupabase && !isForcedMock()) {
         }),
         insert: async (payload: any[]) => {
           await delay();
-          const store = getStore(actualTable);
+          const store = await getStore(actualTable);
           const rows = Array.isArray(payload) ? payload : [payload];
           const insertedRows: any[] = [];
           rows.forEach((row: any) => {
@@ -254,8 +254,60 @@ if (hasRealSupabase && !isForcedMock()) {
             insertedRows.push(newRow);
             notifyMockListeners(actualTable, 'INSERT', newRow);
           });
-          setStore(actualTable, store);
+          await setStore(actualTable, store);
           return { data: insertedRows, error: null };
+        },
+        delete: () => {
+          const chain: any = {
+            _col: null,
+            _val: null,
+            _isNeq: false,
+            neq: function(col: string, val: any) {
+              this._col = col;
+              this._val = val;
+              this._isNeq = true;
+              return this;
+            },
+            eq: function(col: string, val: any) {
+              this._col = col;
+              this._val = val;
+              this._isNeq = false;
+              return this;
+            },
+            then: async function(onfulfilled: any) {
+              await delay();
+              let store = await getStore(actualTable);
+              if (this._col) {
+                if (Array.isArray(store)) {
+                  if (this._isNeq) {
+                    store = store.filter((item: any) => item[this._col] === this._val);
+                  } else {
+                    store = store.filter((item: any) => item[this._col] !== this._val);
+                  }
+                } else {
+                  if (this._isNeq) {
+                    for (const k of Object.keys(store)) {
+                      if (store[k][this._col] !== this._val) {
+                        delete store[k];
+                      }
+                    }
+                  } else {
+                    for (const k of Object.keys(store)) {
+                      if (store[k][this._col] === this._val) {
+                        delete store[k];
+                      }
+                    }
+                  }
+                }
+              } else {
+                store = Array.isArray(store) ? [] : {};
+              }
+              await setStore(actualTable, store);
+              notifyMockListeners(actualTable, 'DELETE', null);
+              return onfulfilled({ error: null });
+            }
+          };
+          return chain;
         }
       };
     },
@@ -263,7 +315,7 @@ if (hasRealSupabase && !isForcedMock()) {
       await delay();
       if (fn === 'generate_tag_batch') {
         const batchSize = params.batch_size || 100;
-        const store = getStore('tags');
+        const store = await getStore('tags');
         const generated = [];
         const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
         const genId = () => {
@@ -279,16 +331,16 @@ if (hasRealSupabase && !isForcedMock()) {
           generated.push({ generated_id: id });
           notifyMockListeners('tags', 'INSERT', newTag);
         }
-        setStore('tags', store);
+        await setStore('tags', store);
         return { data: generated, error: null };
       }
       if (fn === 'increment_tag_scan') {
         const tagId = params.target_tag_id;
-        const store = getStore('tags');
+        const store = await getStore('tags');
         if (store[tagId]) {
           store[tagId].scan_count = (store[tagId].scan_count || 0) + 1;
           store[tagId].last_scanned_at = new Date().toISOString();
-          setStore('tags', store);
+          await setStore('tags', store);
           notifyMockListeners('tags', 'UPDATE', store[tagId]);
           return { data: store[tagId], error: null };
         }
