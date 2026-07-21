@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, generateId, hasRealSupabase, isForcedMock } from '../lib/supabase';
+import { useAdminTags } from '../hooks/useAdminTags';
 
 const triggerHaptic = () => {
   if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -42,10 +43,38 @@ export default function Admin() {
   const [loading, setLoading] = useState(false);
   const [generatedBatch, setGeneratedBatch] = useState<any[]>([]);
   
-  const [metrics, setMetrics] = useState({ total: 0, claimed: 0, unclaimed: 0 });
+  const { tags, setTags, loading: tagsLoading, refetch: fetchTagsList } = useAdminTags();
 
-  // Tags List Management State
-  const [tags, setTags] = useState<any[]>([]);
+  const metrics = useMemo(() => {
+    const total = tags.length;
+    const claimed = tags.filter((t: any) => t.owner_id !== null).length;
+    return {
+      total,
+      claimed,
+      unclaimed: total - claimed
+    };
+  }, [tags]);
+
+  const sortedTags = useMemo(() => {
+    return [...tags].sort((a, b) => {
+      if (a.owner_id && !b.owner_id) return -1;
+      if (!a.owner_id && b.owner_id) return 1;
+      return a.tag_id.localeCompare(b.tag_id);
+    });
+  }, [tags]);
+
+  useEffect(() => {
+    setEditingLabels(prev => {
+      const updated = { ...prev };
+      tags.forEach((t: any) => {
+        if (updated[t.tag_id] === undefined) {
+          updated[t.tag_id] = t.custom_label || '';
+        }
+      });
+      return updated;
+    });
+  }, [tags]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [editingLabels, setEditingLabels] = useState<Record<string, string>>({});
   const [savingLabels, setSavingLabels] = useState<Record<string, boolean>>({});
@@ -100,6 +129,16 @@ export default function Admin() {
         setIsAdmin(true);
         setAuthorized(true);
       } else {
+        const localUser = localStorage.getItem('findme_current_user');
+        if (localUser) {
+          const parsed = JSON.parse(localUser);
+          const email = parsed.email?.toLowerCase() || '';
+          if (['johannesburgwebstudio@gmail.com', 'admin@lotap.co.za', 'findmewebapp7@gmail.com'].includes(email)) {
+            setIsAdmin(true);
+            setAuthorized(true);
+            return;
+          }
+        }
         setIsAdmin(false);
       }
     };
@@ -109,6 +148,37 @@ export default function Admin() {
     fetchOrders();
     fetchResendStatus();
   }, []);
+
+  useEffect(() => {
+    if (!authorized) return;
+
+    // CENTRALIZED SUPABASE REAL-TIME DATA SUBSCRIPTION
+    // Instantly reflects new claims, scans, labels, and orders regardless of device
+    const realtimeChannel = supabase
+      .channel('admin-realtime-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tags' },
+        (payload: any) => {
+          console.log('Real-time database update detected on tags:', payload);
+          fetchTagsList();
+          fetchMetrics();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        (payload: any) => {
+          console.log('Real-time database update detected on orders:', payload);
+          fetchOrders();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(realtimeChannel);
+    };
+  }, [authorized]);
 
   const fetchOrders = async () => {
     const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
@@ -268,35 +338,8 @@ export default function Admin() {
 
 
 
-  const fetchTagsList = async () => {
-    const { data } = await supabase.from('tags').select('*');
-    if (data) {
-      // Sort tags: claimed first, then alphabetical by tag_id
-      const sorted = [...data].sort((a, b) => {
-        if (a.owner_id && !b.owner_id) return -1;
-        if (!a.owner_id && b.owner_id) return 1;
-        return a.tag_id.localeCompare(b.tag_id);
-      });
-      setTags(sorted);
-      
-      const initial: Record<string, string> = {};
-      sorted.forEach((t: any) => {
-        initial[t.tag_id] = t.custom_label || '';
-      });
-      setEditingLabels(initial);
-    }
-  };
-
   const fetchMetrics = async () => {
-    const { data: allTags } = await supabase.from('tags').select('owner_id');
-    if (allTags) {
-      const claimed = allTags.filter((t: any) => t.owner_id !== null).length;
-      setMetrics({
-        total: allTags.length,
-        claimed,
-        unclaimed: allTags.length - claimed
-      });
-    }
+    // Handled automatically via useMemo metrics
   };
 
   const handleUpdateLabel = async (tagId: string) => {
@@ -697,7 +740,7 @@ export default function Admin() {
             <tbody className="divide-y divide-slate-100">
               {(() => {
                 const query = searchQuery.toLowerCase().trim();
-                const filtered = tags.filter((t: any) => 
+                const filtered = sortedTags.filter((t: any) => 
                   t.tag_id.toLowerCase().includes(query) ||
                   (t.child_name || '').toLowerCase().includes(query) ||
                   (t.custom_label || '').toLowerCase().includes(query)

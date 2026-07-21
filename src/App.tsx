@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Admin from './pages/Admin';
+import AdminGuard from './components/AdminGuard';
 import Dashboard from './pages/Dashboard';
 import Tap from './pages/Tap';
 import Home from './pages/Home';
@@ -15,11 +16,12 @@ export default function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<Home />} />
           <Route path="about" element={<About />} />
-          <Route path="admin" element={<Admin />} />
+          <Route path="admin" element={<AdminGuard><Admin /></AdminGuard>} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="claim/:tagId" element={<Dashboard />} />
           <Route path="t/:tagId" element={<Tap />} />
           <Route path="reset-password" element={<ResetPassword />} />
+          <Route path="login" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

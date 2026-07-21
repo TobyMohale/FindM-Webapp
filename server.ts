@@ -524,6 +524,191 @@ async function startServer() {
     }
   });
 
+  const getAppUrl = (req: any) => {
+    if (process.env.APP_URL) {
+      return process.env.APP_URL.replace(/\/$/, "");
+    }
+    const host = req.get('host') || 'localhost:3000';
+    const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+    return `${protocol}://${host}`;
+  };
+
+  // Google OAuth Configuration API
+  app.get("/api/auth/google/config", (req, res) => {
+    const isConfigured = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+    res.json({
+      configured: isConfigured,
+      clientId: process.env.GOOGLE_CLIENT_ID ? `${process.env.GOOGLE_CLIENT_ID.substring(0, 15)}...` : null,
+      redirectUri: `${getAppUrl(req)}/auth/google/callback`
+    });
+  });
+
+  // Google OAuth URL Generation API
+  app.get("/api/auth/google/url", (req, res) => {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const redirectUri = `${getAppUrl(req)}/auth/google/callback`;
+
+    if (!clientId) {
+      // If not configured, tell client to run in high-fidelity simulator mode
+      return res.json({ url: "mock", redirectUri });
+    }
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "openid email profile",
+      access_type: "online",
+      prompt: "select_account"
+    });
+
+    res.json({ 
+      url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+      redirectUri 
+    });
+  });
+
+  // Google OAuth Callback Handler API
+  app.get("/auth/google/callback", async (req, res) => {
+    const { code } = req.query;
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    
+    if (!code) {
+      return res.send(`
+        <html>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background-color: #FDFBF7;">
+            <div style="text-align: center; max-width: 400px; padding: 32px; background: white; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #EAE6DF;">
+              <h2 style="color: #051650; margin-bottom: 8px;">Authentication Cancelled</h2>
+              <p style="color: #64748b; font-size: 14px; line-height: 1.5;">No authorization code was returned by Google. You may close this window.</p>
+              <script>
+                if (window.opener) {
+                  window.opener.postMessage({ type: 'OAUTH_AUTH_FAILURE', error: 'No authorization code provided' }, '*');
+                  setTimeout(() => window.close(), 1500);
+                }
+              </script>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+
+    try {
+      const redirectUri = `${getAppUrl(req)}/auth/google/callback`;
+      
+      // Exchange code for token
+      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code: code as string,
+          client_id: clientId || '',
+          client_secret: clientSecret || '',
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code'
+        })
+      });
+
+      if (!tokenRes.ok) {
+        const errBody = await tokenRes.text();
+        throw new Error(`Google token exchange failed: ${errBody}`);
+      }
+
+      const tokens: any = await tokenRes.json();
+      const accessToken = tokens.access_token;
+
+      // Fetch user info from Google API
+      const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (!userRes.ok) {
+        throw new Error('Failed to retrieve user info from Google APIs');
+      }
+
+      const googleUser: any = await userRes.json();
+      const email = googleUser.email?.toLowerCase() || '';
+      const name = googleUser.name || 'Admin User';
+      const picture = googleUser.picture || '';
+
+      const adminEmails = [
+        'johannesburgwebstudio@gmail.com',
+        'admin@lotap.co.za',
+        'findmewebapp7@gmail.com'
+      ];
+
+      if (adminEmails.includes(email)) {
+        res.send(`
+          <html>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background-color: #FDFBF7;">
+              <div style="text-align: center; max-width: 400px; padding: 32px; background: white; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #EAE6DF;">
+                <div style="width: 60px; height: 60px; border-radius: 50%; overflow: hidden; margin: 0 auto 16px;">
+                  <img src="${picture || 'https://lh3.googleusercontent.com/a/default-user'}" style="width:100%; height:100%; object-fit:cover;" />
+                </div>
+                <h2 style="color: #051650; margin-bottom: 4px;">Welcome, Admin</h2>
+                <p style="color: #64748b; font-size: 14px; margin-bottom: 24px;">Successfully authenticated as ${name} (${email})</p>
+                <p style="color: #c54b8c; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em;">Closing window to unlock dashboard...</p>
+                <script>
+                  if (window.opener) {
+                    window.opener.postMessage({ 
+                      type: 'OAUTH_AUTH_SUCCESS', 
+                      user: ${JSON.stringify({ id: 'google-' + email, email, full_name: name, picture })}
+                    }, '*');
+                    setTimeout(() => window.close(), 1200);
+                  } else {
+                    window.location.href = '/admin';
+                  }
+                </script>
+              </div>
+            </body>
+          </html>
+        `);
+      } else {
+        res.send(`
+          <html>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background-color: #FDFBF7;">
+              <div style="text-align: center; max-width: 400px; padding: 32px; background: white; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #fee2e2;">
+                <div style="font-size: 40px; margin-bottom: 16px;">⚠️</div>
+                <h2 style="color: #991b1b; margin-bottom: 8px;">Access Denied</h2>
+                <p style="color: #64748b; font-size: 14px; line-height: 1.5; margin-bottom: 20px;">The email account <strong>${email}</strong> is not listed as an administrator for LoTap.</p>
+                <script>
+                  if (window.opener) {
+                    window.opener.postMessage({ 
+                      type: 'OAUTH_AUTH_FAILURE', 
+                      error: 'Access Denied: ' + ${JSON.stringify(email)} + ' is not an authorized administrator email.' 
+                    }, '*');
+                    setTimeout(() => window.close(), 4000);
+                  } else {
+                    window.location.href = '/admin';
+                  }
+                </script>
+              </div>
+            </body>
+          </html>
+        `);
+      }
+    } catch (error: any) {
+      console.error('Google OAuth error:', error);
+      res.send(`
+        <html>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background-color: #FDFBF7;">
+            <div style="text-align: center; max-width: 400px; padding: 32px; background: white; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #fee2e2;">
+              <div style="font-size: 40px; margin-bottom: 16px;">❌</div>
+              <h2 style="color: #dc2626; margin-bottom: 8px;">Authentication Error</h2>
+              <p style="color: #64748b; font-size: 14px; line-height: 1.5;">${error.message}</p>
+              <script>
+                if (window.opener) {
+                  window.opener.postMessage({ type: 'OAUTH_AUTH_FAILURE', error: ${JSON.stringify(error.message)} }, '*');
+                  setTimeout(() => window.close(), 4000);
+                }
+              </script>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+  });
+
 
   // Serve static files / Vite middleware
   if (process.env.NODE_ENV !== "production") {

@@ -1514,6 +1514,28 @@ export default function Dashboard() {
                         <div>
                           <label className="block text-[10px] uppercase text-slate-400 mb-1">Relation</label>
                           <input type="text" placeholder="e.g. Mom" value={c.relation} onChange={e => { const nc = [...formData.contacts]; nc[i].relation = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {['Mom', 'Dad', 'Brother', 'Sister', 'Guardian', 'Uncle', 'Aunt'].map(r => (
+                              <button
+                                key={r}
+                                type="button"
+                                onClick={() => {
+                                  const nc = [...formData.contacts];
+                                  nc[i].relation = r;
+                                  setFormData({...formData, contacts: nc});
+                                }}
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+                                  c.relation === r
+                                    ? 'bg-[#C54B8C] border-[#C54B8C] text-white'
+                                    : theme === 'dark'
+                                      ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                                      : 'bg-white border-slate-200 text-[#64748b] hover:bg-slate-100'
+                                }`}
+                              >
+                                {r}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       </div>
                       

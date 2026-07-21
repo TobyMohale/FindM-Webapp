@@ -128,11 +128,37 @@ if (hasRealSupabase && !isForcedMock()) {
     }
   }
 
+  // Real-time subscribers list for the Mock Client
+  const mockListeners: Array<{
+    channel: string;
+    table: string;
+    event: string;
+    callback: (payload: any) => void;
+  }> = [];
+
+  const notifyMockListeners = (table: string, eventType: string, payload: any) => {
+    mockListeners.forEach((l) => {
+      if (l.table === table && (l.event === '*' || l.event === eventType)) {
+        l.callback({
+          eventType,
+          new: payload,
+          old: eventType === 'UPDATE' ? { id: payload.id || payload.tag_id } : undefined,
+          schema: 'public',
+          table
+        });
+      }
+    });
+  };
+
   supabaseInstance = {
     auth: {
       getUser: async () => {
         await delay();
         return { data: { user: currentUser }, error: null };
+      },
+      getSession: async () => {
+        await delay();
+        return { data: { session: currentUser ? { user: currentUser, access_token: 'mock-token', expires_at: 9999999999 } : null }, error: null };
       },
       signInWithOtp: async ({ email }: { email: string }) => {
         await delay();
@@ -256,6 +282,7 @@ if (hasRealSupabase && !isForcedMock()) {
               if (store[val]) {
                 store[val] = { ...store[val], ...payload };
                 setStore(actualTable, store);
+                notifyMockListeners(actualTable, 'UPDATE', store[val]);
                 return { data: [store[val]], error: null };
               }
             } else {
@@ -264,6 +291,7 @@ if (hasRealSupabase && !isForcedMock()) {
                 if (store[k][col] === val) {
                   store[k] = { ...store[k], ...payload };
                   updated.push(store[k]);
+                  notifyMockListeners(actualTable, 'UPDATE', store[k]);
                 }
               }
               setStore(actualTable, store);
@@ -276,12 +304,16 @@ if (hasRealSupabase && !isForcedMock()) {
           await delay();
           const store = getStore(actualTable);
           const rows = Array.isArray(payload) ? payload : [payload];
+          const insertedRows: any[] = [];
           rows.forEach((row: any) => {
             const key = row.id || row.tag_id || Math.random().toString(36).substr(2, 9);
-            store[key] = { id: key, ...row, created_at: new Date().toISOString() };
+            const newRow = { id: key, ...row, created_at: new Date().toISOString() };
+            store[key] = newRow;
+            insertedRows.push(newRow);
+            notifyMockListeners(actualTable, 'INSERT', newRow);
           });
           setStore(actualTable, store);
-          return { data: payload, error: null };
+          return { data: insertedRows, error: null };
         }
       };
     },
@@ -300,8 +332,10 @@ if (hasRealSupabase && !isForcedMock()) {
         for (let i = 0; i < batchSize; i++) {
           let id = genId();
           while (store[id]) id = genId();
-          store[id] = { tag_id: id, owner_id: null, contacts: [], medical: {}, custom_label: '', created_at: new Date().toISOString() };
+          const newTag = { tag_id: id, owner_id: null, contacts: [], medical: {}, custom_label: '', created_at: new Date().toISOString() };
+          store[id] = newTag;
           generated.push({ generated_id: id });
+          notifyMockListeners('tags', 'INSERT', newTag);
         }
         setStore('tags', store);
         return { data: generated, error: null };
@@ -313,11 +347,43 @@ if (hasRealSupabase && !isForcedMock()) {
           store[tagId].scan_count = (store[tagId].scan_count || 0) + 1;
           store[tagId].last_scanned_at = new Date().toISOString();
           setStore('tags', store);
+          notifyMockListeners('tags', 'UPDATE', store[tagId]);
           return { data: store[tagId], error: null };
         }
         return { data: null, error: new Error('Tag not found') };
       }
       return { data: null, error: new Error('RPC not implemented in mock') };
+    },
+    channel: (name: string) => {
+      return {
+        on: function(event: string, filter: any, callback: any) {
+          if (event === 'postgres_changes') {
+            mockListeners.push({
+              channel: name,
+              table: filter.table,
+              event: filter.event || '*',
+              callback
+            });
+          }
+          return this;
+        },
+        subscribe: function() {
+          return this;
+        },
+        unsubscribe: function() {
+          const toRemove = mockListeners.filter(l => l.channel === name);
+          toRemove.forEach(l => {
+            const idx = mockListeners.indexOf(l);
+            if (idx !== -1) mockListeners.splice(idx, 1);
+          });
+        }
+      };
+    },
+    removeChannel: async (channel: any) => {
+      if (channel && typeof channel.unsubscribe === 'function') {
+        channel.unsubscribe();
+      }
+      return { error: null };
     }
   };
 }
