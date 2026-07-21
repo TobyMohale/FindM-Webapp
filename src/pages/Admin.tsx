@@ -43,6 +43,10 @@ export default function Admin() {
   const [loading, setLoading] = useState(false);
   const [generatedBatch, setGeneratedBatch] = useState<any[]>([]);
   
+  // Tag List Pagination and Display States
+  const [pageSize, setPageSize] = useState<number | 'all'>(50);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  
   const { tags, setTags, loading: tagsLoading, refetch: fetchTagsList } = useAdminTags();
 
   const metrics = useMemo(() => {
@@ -249,35 +253,6 @@ export default function Admin() {
     }
   };
 
-  const handleGoogleLogin = async () => {
-    triggerHaptic();
-    setAuthLoading(true);
-    setPassError('');
-    try {
-      if (!hasRealSupabase || isForcedMock()) {
-        const { data } = await supabase.auth.signInWithOAuth({ provider: 'google' });
-        if (data) {
-          setIsAdmin(true);
-          setAuthorized(true);
-        }
-      } else {
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo: window.location.origin + '/admin',
-          }
-        });
-        if (error) {
-          setPassError(error.message);
-        }
-      }
-    } catch (e: any) {
-      setPassError(e.message || 'Failed to trigger Google authentication.');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
   const handleChangePasscode = (e: React.FormEvent) => {
     e.preventDefault();
     const storedPasscode = getStoredPasscode();
@@ -357,46 +332,7 @@ export default function Admin() {
     setSavingLabels(prev => ({ ...prev, [tagId]: false }));
   };
 
-  const [purging, setPurging] = useState(false);
-  const [purgeSuccess, setPurgeSuccess] = useState('');
 
-  const handlePurgeDatabase = async () => {
-    const confirmation = window.confirm(
-      "🛑 CRITICAL ACTION:\n\nAre you sure you want to completely PURGE all orders, tags, and custom labels from the database to start from absolute zero?\n\nThis action cannot be undone."
-    );
-    if (!confirmation) return;
-
-    setPurging(true);
-    setPurgeSuccess('');
-    triggerHaptic();
-
-    try {
-      // 1. Delete all records from tags and orders tables in Supabase
-      const { error: tagsErr } = await supabase.from('tags').delete().neq('tag_id', '');
-      const { error: ordersErr } = await supabase.from('orders').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-
-      if (tagsErr) console.warn('Supabase tags deletion warning:', tagsErr);
-      if (ordersErr) console.warn('Supabase orders deletion warning:', ordersErr);
-
-      // 2. Wipe the local storage mock databases as well
-      localStorage.setItem('findme_tags', '{}');
-      localStorage.setItem('findme_orders', '[]');
-      
-      // Clear generated batch state
-      setGeneratedBatch([]);
-      
-      // Refetch both datasets
-      await fetchTagsList();
-      await fetchOrders();
-      
-      setPurgeSuccess('All administrative tags and orders have been successfully reset to zero. Database cleared.');
-      setTimeout(() => setPurgeSuccess(''), 6000);
-    } catch (e: any) {
-      alert('Error purging data: ' + e.message);
-    } finally {
-      setPurging(false);
-    }
-  };
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -456,12 +392,12 @@ export default function Admin() {
 
   const handleExportCSV = () => {
     if (generatedBatch.length === 0) return;
-    const csvContent = "data:text/csv;charset=utf-8,Production_URL\n" 
-      + generatedBatch.map(t => `${window.location.origin}/t/${t.tag_id}`).join("\n");
+    const csvContent = "data:text/csv;charset=utf-8,Tag_Code\n" 
+      + generatedBatch.map(t => t.tag_id).join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `findme_batch_${new Date().getTime()}.csv`);
+    link.setAttribute("download", `lotap_tag_codes_batch_${new Date().getTime()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -639,42 +575,6 @@ export default function Admin() {
             >
               {authLoading ? 'Verifying Account...' : 'Sign In as Admin'}
             </button>
-
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-slate-200"></span>
-              </div>
-              <div className="relative flex justify-center text-[10px] uppercase tracking-wider font-extrabold">
-                <span className="bg-white px-3 text-slate-400">Or Secure OAuth</span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              disabled={authLoading}
-              className="w-full bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2.5 transition-colors shadow-sm disabled:opacity-50 uppercase tracking-wider"
-            >
-              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              Continue with Google
-            </button>
           </form>
         )}
 
@@ -753,89 +653,124 @@ export default function Admin() {
         </div>
       </div>
 
-      {/* Purge System Reset to Zero Area */}
-      <div className="mb-8 p-5 bg-rose-50 border border-rose-200 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-fade-in">
-        <div>
-          <h3 className="text-xs font-black uppercase tracking-wider text-rose-800 mb-1">⚙️ Administrative Database Reset Utility</h3>
-          <p className="text-[11px] text-rose-600 font-medium leading-relaxed max-w-xl">
-            Completely clear and reset all tags, child profiles, and pending orders across the database to start fresh from zero. This is a production maintenance utility.
-          </p>
-          {purgeSuccess && (
-            <p className="text-xs font-bold text-emerald-600 mt-2">✓ {purgeSuccess}</p>
-          )}
-        </div>
-        <button
-          onClick={handlePurgeDatabase}
-          disabled={purging}
-          className="bg-rose-600 hover:bg-rose-700 text-white font-bold uppercase text-[10px] tracking-wider px-4 py-2.5 rounded-lg transition-all shadow-sm shrink-0 border border-rose-700 disabled:opacity-50 cursor-pointer"
-        >
-          {purging ? 'Purging System...' : 'Purge All Database Records'}
-        </button>
-      </div>
+
 
       {/* Code Generation block */}
       <div className="bg-slate-50 p-6 rounded-lg border border-slate-200">
-        <h2 className="text-lg font-semibold text-[#051650] mb-4">Generate New Batch</h2>
-        <div className="flex items-end gap-4">
-          <div className="flex-1">
-            <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Batch Size</label>
-            <input 
-              type="number" 
-              value={batchSize} 
-              onChange={(e) => setBatchSize(Number(e.target.value))}
-              className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#051650]"
-            />
+        <h2 className="text-lg font-bold text-[#051650] mb-2 flex items-center gap-2">
+          <span>🏷️</span> Generate Factory Tag Codes
+        </h2>
+        <p className="text-xs text-slate-500 mb-6">
+          Self-service tool to generate unique 6-character Tag Codes for physical wristband manufacturing and printing.
+        </p>
+
+        {/* Operational Flow Diagram Card */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50/60 p-5 rounded-xl border border-blue-100 mb-6 text-slate-700">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-base">ℹ️</span>
+            <h3 className="text-xs font-black uppercase tracking-wider text-[#051650]">How Batch Generation Works</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mt-3 text-xs">
+            <div className="bg-white p-3 rounded-lg border border-blue-100/80 shadow-2xs">
+              <div className="font-bold text-[#051650] mb-1">1. Unique Code Generation</div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">Generates random 6-character alphanumeric Tag IDs (e.g. <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-[#051650]">g4smwb</code>) containing zero user data.</p>
+            </div>
+            <div className="bg-white p-3 rounded-lg border border-blue-100/80 shadow-2xs">
+              <div className="font-bold text-[#051650] mb-1">2. Database Pre-registration</div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">Tags are initialized in the database as <span className="text-slate-700 font-semibold">Unclaimed</span>, ready for parent registration upon delivery.</p>
+            </div>
+            <div className="bg-white p-3 rounded-lg border border-blue-100/80 shadow-2xs">
+              <div className="font-bold text-[#051650] mb-1">3. Manufacturer Code Export</div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">Export tag codes directly to send to the manufacturer for physical wristband imprinting & engraving.</p>
+            </div>
+            <div className="bg-white p-3 rounded-lg border border-blue-100/80 shadow-2xs">
+              <div className="font-bold text-[#051650] mb-1">4. Customer Activation</div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">Parent receives band, enters or taps the 6-character Tag Code to claim and attach emergency contacts & medical data.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-end gap-4">
+          <div className="flex-1 w-full">
+            <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Batch Size (Number of Tag Codes)</label>
+            <div className="flex gap-2">
+              <input 
+                type="number" 
+                value={batchSize} 
+                onChange={(e) => setBatchSize(Number(e.target.value))}
+                className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#051650] font-semibold text-[#051650] bg-white"
+              />
+              <div className="flex gap-1 shrink-0">
+                {[50, 100, 250, 500].map(size => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => setBatchSize(size)}
+                    className={`px-3 py-2 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                      batchSize === size ? 'bg-[#051650] text-white border-[#051650]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           <button 
             onClick={() => { triggerHaptic(); handleGenerate(); }}
             disabled={loading || batchSize <= 0}
-            className="bg-[#051650] text-white px-6 py-3 rounded-lg font-semibold hover:bg-[#0A2472] transition-colors disabled:opacity-50"
+            className="w-full sm:w-auto bg-[#051650] text-white px-6 py-3.5 rounded-lg font-bold hover:bg-[#0A2472] transition-colors disabled:opacity-50 cursor-pointer shadow-sm text-xs uppercase tracking-wider shrink-0"
           >
-            {loading ? 'Generating...' : 'Generate Codes'}
+            {loading ? 'Generating Batch...' : 'Generate Tag Codes ⚡'}
           </button>
         </div>
 
         {generatedBatch.length > 0 && (
           <div className="mt-6 pt-6 border-t border-slate-200">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
-              <span className="text-sm font-semibold text-green-600">✓ Successfully generated {generatedBatch.length} codes</span>
+              <div>
+                <span className="text-sm font-bold text-emerald-600 flex items-center gap-1">
+                  ✓ Successfully generated {generatedBatch.length} tag codes in database
+                </span>
+                <span className="text-[11px] text-slate-400 font-medium">Ready for manufacturer export</span>
+              </div>
               <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                 <button 
                   onClick={() => {
                     triggerHaptic();
-                    const allUrls = generatedBatch.map(t => `${window.location.origin}/t/${t.tag_id}`).join("\n");
-                    navigator.clipboard.writeText(allUrls);
-                    alert("All " + generatedBatch.length + " production URLs copied to clipboard!");
+                    const allCodes = generatedBatch.map(t => t.tag_id).join("\n");
+                    navigator.clipboard.writeText(allCodes);
+                    alert(`All ${generatedBatch.length} Tag Codes copied to clipboard!`);
                   }}
-                  className="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors shadow-sm uppercase tracking-wider cursor-pointer"
+                  className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-xs transition-colors shadow-sm uppercase tracking-wider cursor-pointer"
                 >
-                  Copy All URLs
+                  📋 Copy All Tag Codes
                 </button>
-                <button onClick={() => { triggerHaptic(); handleExportCSV(); }} className="bg-[#C54B8C] text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-[#B53389] transition-colors shadow-sm">
-                  Download CSV for Factory
+                <button onClick={() => { triggerHaptic(); handleExportCSV(); }} className="bg-[#C54B8C] text-white px-4 py-2 rounded-lg font-bold text-xs hover:bg-[#B53389] transition-colors shadow-sm cursor-pointer uppercase tracking-wider">
+                  📥 Download CSV ({generatedBatch.length} Codes)
                 </button>
               </div>
             </div>
             
-            <div className="bg-white border border-slate-200 rounded-xl p-3 max-h-48 overflow-y-auto font-mono text-xs text-slate-600 shadow-inner divide-y divide-slate-100">
-              {generatedBatch.map(t => {
-                const url = `${window.location.origin}/t/${t.tag_id}`;
-                return (
-                  <div key={t.tag_id} className="py-2 flex justify-between items-center group">
-                    <span className="text-slate-500 font-semibold">{url}</span>
-                    <button
-                      onClick={() => {
-                        triggerHaptic();
-                        navigator.clipboard.writeText(url);
-                        alert(`Copied link to clipboard: ${url}`);
-                      }}
-                      className="opacity-60 group-hover:opacity-100 hover:text-[#C54B8C] font-bold uppercase text-[10px] tracking-wider px-2 py-1 bg-slate-50 border border-slate-100 rounded-md transition-all cursor-pointer"
-                    >
-                      Copy Link
-                    </button>
+            <div className="bg-white border border-slate-200 rounded-xl p-3 max-h-56 overflow-y-auto text-xs text-slate-600 shadow-inner divide-y divide-slate-100">
+              {generatedBatch.map((t, idx) => (
+                <div key={t.tag_id} className="py-2 flex items-center justify-between gap-2 group">
+                  <div className="flex items-center gap-3">
+                    <span className="text-slate-400 font-mono text-[11px] w-8">#{idx + 1}</span>
+                    <span className="text-[#051650] font-mono font-extrabold bg-slate-100 px-2.5 py-1 rounded text-xs tracking-widest">{t.tag_id}</span>
                   </div>
-                );
-              })}
+                  <button
+                    onClick={() => {
+                      triggerHaptic();
+                      navigator.clipboard.writeText(t.tag_id);
+                      alert(`Copied Tag Code: ${t.tag_id}`);
+                    }}
+                    className="hover:text-[#051650] font-bold uppercase text-[10px] tracking-wider px-3 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md transition-all cursor-pointer text-slate-700"
+                  >
+                    Copy Code
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -843,122 +778,228 @@ export default function Admin() {
 
       {/* Beautiful Admin Custom Labeling & NFC Tag Management Tool */}
       <div className="bg-slate-50 p-6 rounded-lg border border-slate-200 mt-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-          <div>
-            <h2 className="text-lg font-bold text-[#051650] flex items-center gap-2">
-              <span>🏷️</span> Assign NFC Tag Custom Labels
-            </h2>
-            <p className="text-xs text-slate-500">
-              Assign easy-to-identify labels (e.g. 'Child-1-Wristband') to make tags easily identifiable on multi-child parent dashboards.
-            </p>
-          </div>
-          <div className="w-full sm:w-64">
-            <input 
-              type="text"
-              placeholder="🔍 Search tags, children or labels..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full p-2.5 border border-slate-300 rounded-lg text-xs bg-white text-[#051650] font-medium focus:outline-none focus:ring-2 focus:ring-[#051650]"
-            />
-          </div>
-        </div>
+        {(() => {
+          const query = searchQuery.toLowerCase().trim();
+          const filtered = sortedTags.filter((t: any) => 
+            t.tag_id.toLowerCase().includes(query) ||
+            (t.child_name || '').toLowerCase().includes(query) ||
+            (t.custom_label || '').toLowerCase().includes(query)
+          );
+          
+          const totalFiltered = filtered.length;
+          const effectiveSize = pageSize === 'all' ? (totalFiltered || 1) : pageSize;
+          const totalPages = Math.ceil(totalFiltered / effectiveSize) || 1;
+          const activePage = Math.min(currentPage, totalPages);
+          const startIndex = totalFiltered === 0 ? 0 : (activePage - 1) * effectiveSize;
+          const endIndex = pageSize === 'all' ? totalFiltered : Math.min(startIndex + effectiveSize, totalFiltered);
+          const currentSlice = filtered.slice(startIndex, endIndex);
 
-        <div className="overflow-x-auto bg-white rounded-lg border border-slate-200 shadow-sm max-h-[420px] overflow-y-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead className="sticky top-0 bg-slate-100 z-10 border-b border-slate-200">
-              <tr className="text-[#051650] uppercase font-bold text-[10px] tracking-wider">
-                <th className="p-3">Tag ID / Actions</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Child Name</th>
-                <th className="p-3">Custom Label / Wristband Identifier</th>
-                <th className="p-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(() => {
-                const query = searchQuery.toLowerCase().trim();
-                const filtered = sortedTags.filter((t: any) => 
-                  t.tag_id.toLowerCase().includes(query) ||
-                  (t.child_name || '').toLowerCase().includes(query) ||
-                  (t.custom_label || '').toLowerCase().includes(query)
-                );
-                
-                if (filtered.length === 0) {
-                  return (
-                    <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">
-                        No active or generated tags match "{searchQuery}"
-                      </td>
-                    </tr>
-                  );
-                }
+          return (
+            <>
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-[#051650] flex items-center gap-2">
+                    <span>🏷️</span> Active NFC Tag Codes ({metrics.total} Total)
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Browse all pre-generated wristband codes, copy tag IDs, or assign custom parent display labels.
+                  </p>
+                </div>
 
-                return filtered.map((t: any) => (
-                  <tr key={t.tag_id} className="hover:bg-slate-50/50">
-                    <td className="p-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-bold text-[#051650] bg-slate-100 px-1.5 py-0.5 rounded text-[11px]">{t.tag_id}</span>
-                        <button
-                          onClick={() => {
-                            triggerHaptic();
-                            navigator.clipboard.writeText(t.tag_id);
-                            alert(`Copied Tag ID: ${t.tag_id}`);
-                          }}
-                          className="p-1 hover:bg-slate-100 rounded text-[13px] text-slate-400 hover:text-slate-700 cursor-pointer"
-                          title="Copy Tag ID"
-                        >
-                          🆔
-                        </button>
-                        <button
-                          onClick={() => {
-                            triggerHaptic();
-                            const url = `${window.location.origin}/t/${t.tag_id}`;
-                            navigator.clipboard.writeText(url);
-                            alert(`Copied Tag active URL: ${url}`);
-                          }}
-                          className="p-1 hover:bg-[#FFCFF1]/30 rounded text-[13px] text-slate-400 hover:text-[#C54B8C] cursor-pointer"
-                          title="Copy Scan URL"
-                        >
-                          🔗
-                        </button>
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      {t.owner_id ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          Claimed
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                          Unclaimed
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3 font-semibold text-slate-700">{t.child_name || '—'}</td>
-                    <td className="p-3">
-                      <input 
-                        type="text"
-                        placeholder="e.g. Child-1-Wristband"
-                        value={editingLabels[t.tag_id] ?? ''}
-                        onChange={(e) => setEditingLabels(prev => ({ ...prev, [t.tag_id]: e.target.value }))}
-                        className="w-full max-w-xs p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#051650] bg-slate-50 focus:bg-white text-xs font-semibold text-[#051650]"
-                      />
-                    </td>
-                    <td className="p-3 text-right">
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                  <div className="w-full sm:w-64">
+                    <input 
+                      type="text"
+                      placeholder="🔍 Search tag code, child or label..."
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="w-full p-2.5 border border-slate-300 rounded-lg text-xs bg-white text-[#051650] font-medium focus:outline-none focus:ring-2 focus:ring-[#051650]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* View Control Tabs & Page Size Selector Bar */}
+              <div className="bg-white p-3 rounded-lg border border-slate-200 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-extrabold text-[#051650] uppercase tracking-wider text-[10px] mr-1">Display Mode:</span>
+                  {[50, 100, 250, 500, 'all'].map((size) => (
+                    <button
+                      key={size.toString()}
+                      onClick={() => {
+                        triggerHaptic();
+                        setPageSize(size as any);
+                        setCurrentPage(1);
+                      }}
+                      className={`px-2.5 py-1 rounded-md font-bold text-[11px] transition-all cursor-pointer ${
+                        pageSize === size
+                          ? 'bg-[#051650] text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {size === 'all' ? `All (${totalFiltered} Long Scroll)` : `${size} Per Page`}
+                    </button>
+                  ))}
+                </div>
+
+                {totalFiltered > 0 && (
+                  <div className="text-slate-500 text-[11px] font-semibold">
+                    Showing <span className="text-[#051650] font-bold">#{startIndex + 1}</span> – <span className="text-[#051650] font-bold">#{endIndex}</span> of <span className="text-[#051650] font-bold">{totalFiltered}</span> tags
+                  </div>
+                )}
+              </div>
+
+              {/* Pagination Page Selector Tabs (when paginated) */}
+              {pageSize !== 'all' && totalPages > 1 && (
+                <div className="flex items-center justify-between gap-2 mb-3 bg-slate-100 p-2 rounded-lg text-xs overflow-x-auto">
+                  <div className="flex items-center gap-1">
+                    <button
+                      disabled={activePage === 1}
+                      onClick={() => { triggerHaptic(); setCurrentPage(p => Math.max(1, p - 1)); }}
+                      className="px-2.5 py-1 bg-white hover:bg-slate-200 disabled:opacity-40 rounded text-[11px] font-bold text-slate-700 cursor-pointer border border-slate-200"
+                    >
+                      ← Prev
+                    </button>
+
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
                       <button
-                        onClick={() => { triggerHaptic(); handleUpdateLabel(t.tag_id); }}
-                        disabled={savingLabels[t.tag_id] || (editingLabels[t.tag_id] ?? '') === (t.custom_label ?? '')}
-                        className="bg-[#051650] hover:bg-[#0A2472] text-white px-3.5 py-2 rounded-lg font-bold transition-colors disabled:opacity-40 text-[10px] cursor-pointer"
+                        key={p}
+                        onClick={() => { triggerHaptic(); setCurrentPage(p); }}
+                        className={`px-2.5 py-1 rounded font-extrabold text-[11px] transition-all cursor-pointer ${
+                          activePage === p
+                            ? 'bg-[#051650] text-white'
+                            : 'bg-white hover:bg-slate-200 text-slate-700 border border-slate-200'
+                        }`}
                       >
-                        {savingLabels[t.tag_id] ? 'Saving...' : 'Save Label'}
+                        {p}
                       </button>
-                    </td>
-                  </tr>
-                ));
-              })()}
-            </tbody>
-          </table>
-        </div>
+                    ))}
+
+                    <button
+                      disabled={activePage === totalPages}
+                      onClick={() => { triggerHaptic(); setCurrentPage(p => Math.min(totalPages, p + 1)); }}
+                      className="px-2.5 py-1 bg-white hover:bg-slate-200 disabled:opacity-40 rounded text-[11px] font-bold text-slate-700 cursor-pointer border border-slate-200"
+                    >
+                      Next →
+                    </button>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap">
+                    Page {activePage} of {totalPages}
+                  </span>
+                </div>
+              )}
+
+              <div className="overflow-x-auto bg-white rounded-lg border border-slate-200 shadow-sm max-h-[550px] overflow-y-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="sticky top-0 bg-slate-100 z-10 border-b border-slate-200">
+                    <tr className="text-[#051650] uppercase font-bold text-[10px] tracking-wider">
+                      <th className="p-3 w-12 text-center">#</th>
+                      <th className="p-3">Tag Code</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-3">Child Name</th>
+                      <th className="p-3">Custom Label / Wristband Identifier</th>
+                      <th className="p-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {totalFiltered === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
+                          No active or generated tags match "{searchQuery}"
+                        </td>
+                      </tr>
+                    ) : (
+                      currentSlice.map((t: any, idx: number) => {
+                        const itemNumber = startIndex + idx + 1;
+                        return (
+                          <tr key={t.tag_id} className="hover:bg-slate-50/50">
+                            <td className="p-3 text-center font-mono text-slate-400 font-bold text-[11px]">
+                              #{itemNumber}
+                            </td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-black text-[#051650] bg-slate-100 px-2 py-1 rounded text-xs tracking-widest">{t.tag_id}</span>
+                                <button
+                                  onClick={() => {
+                                    triggerHaptic();
+                                    navigator.clipboard.writeText(t.tag_id);
+                                    alert(`Copied Tag Code: ${t.tag_id}`);
+                                  }}
+                                  className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[10px] rounded border border-slate-200 transition-all cursor-pointer uppercase tracking-wider"
+                                  title="Copy 6-character Tag Code"
+                                >
+                                  Copy Code
+                                </button>
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              {t.owner_id ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  Claimed
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                  Unclaimed
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3 font-semibold text-slate-700">{t.child_name || '—'}</td>
+                            <td className="p-3">
+                              <input 
+                                type="text"
+                                placeholder="e.g. Child-1-Wristband"
+                                value={editingLabels[t.tag_id] ?? ''}
+                                onChange={(e) => setEditingLabels(prev => ({ ...prev, [t.tag_id]: e.target.value }))}
+                                className="w-full max-w-xs p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#051650] bg-slate-50 focus:bg-white text-xs font-semibold text-[#051650]"
+                              />
+                            </td>
+                            <td className="p-3 text-right">
+                              <button
+                                onClick={() => { triggerHaptic(); handleUpdateLabel(t.tag_id); }}
+                                disabled={savingLabels[t.tag_id] || (editingLabels[t.tag_id] ?? '') === (t.custom_label ?? '')}
+                                className="bg-[#051650] hover:bg-[#0A2472] text-white px-3.5 py-2 rounded-lg font-bold transition-colors disabled:opacity-40 text-[10px] cursor-pointer"
+                              >
+                                {savingLabels[t.tag_id] ? 'Saving...' : 'Save Label'}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Bottom Pagination Bar when multi-page */}
+              {pageSize !== 'all' && totalPages > 1 && (
+                <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-200 text-xs">
+                  <div className="text-slate-500 text-[11px] font-medium">
+                    Page <span className="font-bold text-[#051650]">{activePage}</span> of <span className="font-bold text-[#051650]">{totalPages}</span> ({totalFiltered} total items)
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      disabled={activePage === 1}
+                      onClick={() => { triggerHaptic(); setCurrentPage(p => Math.max(1, p - 1)); }}
+                      className="px-3 py-1 bg-white hover:bg-slate-200 disabled:opacity-40 rounded text-xs font-bold text-slate-700 cursor-pointer border border-slate-200"
+                    >
+                      ← Previous
+                    </button>
+                    <button
+                      disabled={activePage === totalPages}
+                      onClick={() => { triggerHaptic(); setCurrentPage(p => Math.min(totalPages, p + 1)); }}
+                      className="px-3 py-1 bg-white hover:bg-slate-200 disabled:opacity-40 rounded text-xs font-bold text-slate-700 cursor-pointer border border-slate-200"
+                    >
+                      Next →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {/* Orders List */}

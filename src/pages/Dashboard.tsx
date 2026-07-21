@@ -1096,14 +1096,14 @@ export default function Dashboard() {
                   : 'bg-slate-50 border-slate-200'
               }`}>
                 <h3 className={`text-sm font-bold mb-3 uppercase tracking-wider ${theme === 'dark' ? 'text-[#FFCFF1]' : 'text-[#051650]'}`}>How the "self-service upload" actually works</h3>
-                <p className="text-sm leading-relaxed mb-4 text-slate-400">
-                  The physical NFC chip only ever stores one thing: a URL, like <span className="font-mono bg-slate-800 text-[#FFCFF1] px-1 py-0.5 rounded text-xs">lotap.co.za/t/8f3k2p</span>. That's written once, before the tag ships.
+                <p className={`text-xs leading-relaxed mb-3 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>
+                  The physical NFC chip only ever stores one thing: a URL, like <span className="font-mono bg-slate-200 dark:bg-slate-800 text-[#051650] dark:text-[#FFCFF1] px-1 py-0.5 rounded text-[11px]">https://lotap.co.za/</span>. That's written once, before the tag ships.
                 </p>
-                <p className="text-sm leading-relaxed mb-4 text-slate-400">
+                <p className={`text-xs leading-relaxed mb-3 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>
                   Everything on this page is saved against that Tag ID in a database — not on the chip. So when a parent edits a phone number or adds an allergy months later, the same physical tag instantly shows the new info, because the tag was only ever a pointer.
                 </p>
-                <p className="text-xs text-slate-500 italic">
-                  In production this uses real user accounts, a proper Supabase backend, POPIA-compliant consent capture, and RLS security policies.
+                <p className={`text-[11px] leading-relaxed font-medium pt-2 border-t border-slate-200 dark:border-slate-800 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                  In production this becomes: real user accounts, a proper backend (e.g. Supabase/Firebase), POPIA-compliant consent capture for a minor's data, and a real WhatsApp Business API call instead of a wa.me link.
                 </p>
               </div>
             </div>
@@ -1432,6 +1432,7 @@ export default function Dashboard() {
                     <label className={`block text-xs font-bold uppercase mb-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Child's Name</label>
                     <input 
                       type="text" 
+                      placeholder="e.g. Lindiwe"
                       value={formData.child_name || ''} 
                       onChange={e => setFormData({...formData, child_name: e.target.value})} 
                       className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
@@ -1452,13 +1453,13 @@ export default function Dashboard() {
                           : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'
                       }`}
                     >
-                      {['🦸‍♀️','🧒','👧','👦','🧑','👶'].map(a => <option key={a} value={a}>{a}</option>)}
+                      {['🧒','👧','👦','🦸‍♀️','🧑','👶'].map(a => <option key={a} value={a}>{a}</option>)}
                     </select>
                   </div>
                 </div>
 
                 <div>
-                  <label className={`block text-xs font-bold uppercase mb-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Parent WhatsApp (For Location Alerts)</label>
+                  <label className={`block text-xs font-bold uppercase mb-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Parent WhatsApp number (used for "share location")</label>
                   <input 
                     type="tel" 
                     placeholder="e.g. 082 123 4567" 
@@ -1480,9 +1481,9 @@ export default function Dashboard() {
                     <label className={`block text-xs font-bold uppercase ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Emergency Contacts</label>
                     <button 
                       onClick={() => { triggerHaptic(); setFormData({...formData, contacts: [...(formData.contacts||[]), {name:'', relation:'', phone:'', whatsapp:true}]}); }} 
-                      className="text-[#C54B8C] text-sm font-semibold hover:underline"
+                      className="text-[#C54B8C] text-sm font-semibold hover:underline cursor-pointer"
                     >
-                      + Add Contact
+                      + Add contact
                     </button>
                   </div>
                   
@@ -1500,7 +1501,7 @@ export default function Dashboard() {
                     }`}>
                       <button 
                         onClick={() => { const nc = [...formData.contacts]; nc.splice(i,1); setFormData({...formData, contacts: nc}); }} 
-                        className="absolute top-4 right-4 text-slate-400 hover:text-red-500 text-sm font-bold"
+                        className="absolute top-4 right-4 text-slate-400 hover:text-red-500 text-sm font-bold cursor-pointer"
                         title="Remove contact"
                       >
                         ✕
@@ -1509,13 +1510,13 @@ export default function Dashboard() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 pr-6">
                         <div>
                           <label className="block text-[10px] uppercase text-slate-400 mb-1">Name</label>
-                          <input type="text" placeholder="e.g. Thandeka" value={c.name} onChange={e => { const nc = [...formData.contacts]; nc[i].name = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                          <input type="text" placeholder="Name" value={c.name} onChange={e => { const nc = [...formData.contacts]; nc[i].name = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
                         </div>
                         <div>
                           <label className="block text-[10px] uppercase text-slate-400 mb-1">Relation</label>
-                          <input type="text" placeholder="e.g. Mom" value={c.relation} onChange={e => { const nc = [...formData.contacts]; nc[i].relation = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                          <input type="text" placeholder="Parent, Aunt, Neighbour…" value={c.relation} onChange={e => { const nc = [...formData.contacts]; nc[i].relation = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
                           <div className="flex flex-wrap gap-1 mt-1.5">
-                            {['Mom', 'Dad', 'Brother', 'Sister', 'Guardian', 'Uncle', 'Aunt'].map(r => (
+                            {['Parent', 'Aunt', 'Neighbour', 'Mom', 'Dad', 'Guardian'].map(r => (
                               <button
                                 key={r}
                                 type="button"
@@ -1524,7 +1525,7 @@ export default function Dashboard() {
                                   nc[i].relation = r;
                                   setFormData({...formData, contacts: nc});
                                 }}
-                                className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
                                   c.relation === r
                                     ? 'bg-[#C54B8C] border-[#C54B8C] text-white'
                                     : theme === 'dark'
@@ -1540,13 +1541,13 @@ export default function Dashboard() {
                       </div>
                       
                       <div className="mb-3">
-                        <label className="block text-[10px] uppercase text-slate-400 mb-1">Phone Number</label>
-                        <input type="tel" placeholder="e.g. 082 123 4567" value={c.phone} onChange={e => { const nc = [...formData.contacts]; nc[i].phone = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                        <label className="block text-[10px] uppercase text-slate-400 mb-1">Phone number</label>
+                        <input type="tel" placeholder="082 123 4567" value={c.phone} onChange={e => { const nc = [...formData.contacts]; nc[i].phone = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
                       </div>
                       
-                      <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer w-max">
+                      <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer w-max">
                         <input type="checkbox" checked={c.whatsapp} onChange={e => { const nc = [...formData.contacts]; nc[i].whatsapp = e.target.checked; setFormData({...formData, contacts: nc}); }} className="rounded text-[#25D366] focus:ring-[#25D366]" />
-                        Enable WhatsApp Button
+                        Also show WhatsApp button for this contact
                       </label>
                     </div>
                   ))}
@@ -1555,19 +1556,19 @@ export default function Dashboard() {
                 <hr className="border-slate-100"/>
 
                 <div>
-                  <label className={`block text-xs font-bold uppercase mb-4 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Medical Information</label>
+                  <label className={`block text-xs font-bold uppercase mb-4 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Medical information</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <div>
                       <label className="block text-[10px] uppercase text-slate-400 mb-1">Allergies</label>
-                      <input type="text" placeholder="e.g. Peanuts, Penicillin" value={formData.medical?.allergies || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, allergies: e.target.value}})} className={`w-full p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                      <input type="text" placeholder="e.g. Peanuts, penicillin" value={formData.medical?.allergies || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, allergies: e.target.value}})} className={`w-full p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
                     </div>
                     <div>
                       <label className="block text-[10px] uppercase text-slate-400 mb-1">Conditions</label>
-                      <input type="text" placeholder="e.g. Asthma, Epilepsy" value={formData.medical?.conditions || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, conditions: e.target.value}})} className={`w-full p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                      <input type="text" placeholder="e.g. Asthma, epilepsy" value={formData.medical?.conditions || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, conditions: e.target.value}})} className={`w-full p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[10px] uppercase text-slate-400 mb-1">Additional Notes</label>
+                    <label className="block text-[10px] uppercase text-slate-400 mb-1">Notes</label>
                     <textarea placeholder="e.g. Carries an inhaler in the front pocket of her school bag." value={formData.medical?.notes || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, notes: e.target.value}})} className={`w-full p-3 border rounded-lg h-24 resize-none text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`}></textarea>
                   </div>
                 </div>
