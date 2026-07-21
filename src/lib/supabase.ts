@@ -39,68 +39,10 @@ if (hasRealSupabase && !isForcedMock()) {
   };
   const setStore = (key: string, val: any) => localStorage.setItem(`findme_${key}`, JSON.stringify(val));
 
-  // Seed demo data if missing or has old default number
+  // Initialize empty tag store to start from absolute zero
   const tags = getStore('tags');
-  if (!tags['demo01'] || !tags['demo02'] || !tags['aysfhu'] || tags['demo01'].parent_whatsapp === '+27821234567') {
-    tags['demo01'] = {
-      tag_id: 'demo01',
-      owner_id: 'mock-user-1',
-      child_name: 'Amo Dlamini',
-      avatar: '🦸‍♀️',
-      parent_whatsapp: '',
-      contacts: [{ name: 'Thandeka Dlamini', relation: 'Mom', phone: '', whatsapp: true }],
-      medical: { allergies: 'Peanuts', conditions: 'Asthma', notes: '' },
-      custom_label: 'Child-1-Wristband',
-      created_at: new Date().toISOString(),
-      claimed_at: new Date().toISOString()
-    };
-    tags['demo02'] = {
-      tag_id: 'demo02',
-      owner_id: 'mock-user-1',
-      child_name: 'Emma Dlamini',
-      avatar: '👧',
-      parent_whatsapp: '',
-      contacts: [{ name: 'Thandeka Dlamini', relation: 'Mom', phone: '', whatsapp: true }],
-      medical: { allergies: 'None', conditions: 'Healthy', notes: '' },
-      custom_label: 'Child-2-Wristband',
-      created_at: new Date().toISOString(),
-      claimed_at: new Date().toISOString()
-    };
-    // Seed pre-generated unclaimed codes for parent activation tests
-    tags['aysfhu'] = {
-      tag_id: 'aysfhu',
-      owner_id: null,
-      child_name: '',
-      avatar: '👧',
-      parent_whatsapp: '',
-      contacts: [],
-      medical: { allergies: '', conditions: '', notes: '' },
-      custom_label: 'Unclaimed Wristband A',
-      created_at: new Date().toISOString()
-    };
-    tags['lotap1'] = {
-      tag_id: 'lotap1',
-      owner_id: null,
-      child_name: '',
-      avatar: '👧',
-      parent_whatsapp: '',
-      contacts: [],
-      medical: { allergies: '', conditions: '', notes: '' },
-      custom_label: 'Unclaimed Wristband 1',
-      created_at: new Date().toISOString()
-    };
-    tags['lotap2'] = {
-      tag_id: 'lotap2',
-      owner_id: null,
-      child_name: '',
-      avatar: '👦',
-      parent_whatsapp: '',
-      contacts: [],
-      medical: { allergies: '', conditions: '', notes: '' },
-      custom_label: 'Unclaimed Wristband 2',
-      created_at: new Date().toISOString()
-    };
-    setStore('tags', tags);
+  if (Object.keys(tags).length === 0) {
+    setStore('tags', {});
   }
 
   const users = getStore('users');

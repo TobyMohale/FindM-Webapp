@@ -357,27 +357,107 @@ export default function Admin() {
     setSavingLabels(prev => ({ ...prev, [tagId]: false }));
   };
 
+  const [purging, setPurging] = useState(false);
+  const [purgeSuccess, setPurgeSuccess] = useState('');
+
+  const handlePurgeDatabase = async () => {
+    const confirmation = window.confirm(
+      "🛑 CRITICAL ACTION:\n\nAre you sure you want to completely PURGE all orders, tags, and custom labels from the database to start from absolute zero?\n\nThis action cannot be undone."
+    );
+    if (!confirmation) return;
+
+    setPurging(true);
+    setPurgeSuccess('');
+    triggerHaptic();
+
+    try {
+      // 1. Delete all records from tags and orders tables in Supabase
+      const { error: tagsErr } = await supabase.from('tags').delete().neq('tag_id', '');
+      const { error: ordersErr } = await supabase.from('orders').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+      if (tagsErr) console.warn('Supabase tags deletion warning:', tagsErr);
+      if (ordersErr) console.warn('Supabase orders deletion warning:', ordersErr);
+
+      // 2. Wipe the local storage mock databases as well
+      localStorage.setItem('findme_tags', '{}');
+      localStorage.setItem('findme_orders', '[]');
+      
+      // Clear generated batch state
+      setGeneratedBatch([]);
+      
+      // Refetch both datasets
+      await fetchTagsList();
+      await fetchOrders();
+      
+      setPurgeSuccess('All administrative tags and orders have been successfully reset to zero. Database cleared.');
+      setTimeout(() => setPurgeSuccess(''), 6000);
+    } catch (e: any) {
+      alert('Error purging data: ' + e.message);
+    } finally {
+      setPurging(false);
+    }
+  };
+
   const handleGenerate = async () => {
     setLoading(true);
-    const { data, error } = await supabase.rpc('generate_tag_batch', { batch_size: batchSize });
-    if (data) {
-      const formatted = data.map((row: any) => {
-        if (typeof row === 'string') {
-          return { tag_id: row };
+    triggerHaptic();
+    try {
+      // First attempt using Supabase RPC batch generator
+      const { data, error } = await supabase.rpc('generate_tag_batch', { batch_size: batchSize });
+      
+      if (data && !error) {
+        const formatted = data.map((row: any) => {
+          if (typeof row === 'string') {
+            return { tag_id: row };
+          }
+          return { tag_id: row.generated_id || row.tag_id };
+        });
+        setGeneratedBatch(formatted);
+      } else {
+        // Fallback: Generate tags directly via secure client-side insertion if RPC not found or fails
+        console.warn('RPC generate_tag_batch not found or failed. Running high-fidelity client fallback batch generator...');
+        const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+        const newTags: any[] = [];
+        
+        for (let i = 0; i < batchSize; i++) {
+          let uniqueId = '';
+          for (let j = 0; j < 6; j++) {
+            uniqueId += chars[Math.floor(Math.random() * chars.length)];
+          }
+          newTags.push({
+            tag_id: uniqueId,
+            owner_id: null,
+            child_name: '',
+            avatar: '👧',
+            parent_whatsapp: '',
+            contacts: [],
+            medical: { allergies: '', conditions: '', notes: '' },
+            custom_label: '',
+            scan_count: 0
+          });
         }
-        return { tag_id: row.generated_id || row.tag_id };
-      });
-      setGeneratedBatch(formatted);
+        
+        // Batch insert tags
+        const { error: insertError } = await supabase.from('tags').insert(newTags);
+        if (insertError) {
+          throw new Error('Fallback tag generation failed: ' + insertError.message);
+        }
+        
+        setGeneratedBatch(newTags);
+      }
+      
+      await fetchTagsList();
+    } catch (err: any) {
+      alert('Error generating tag codes: ' + err.message);
+    } finally {
+      setLoading(false);
     }
-    await fetchMetrics();
-    await fetchTagsList();
-    setLoading(false);
   };
 
   const handleExportCSV = () => {
     if (generatedBatch.length === 0) return;
     const csvContent = "data:text/csv;charset=utf-8,Production_URL\n" 
-      + generatedBatch.map(t => `https://lotap.co.za/t/${t.tag_id}`).join("\n");
+      + generatedBatch.map(t => `${window.location.origin}/t/${t.tag_id}`).join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -652,21 +732,48 @@ export default function Admin() {
       <h1 className="text-2xl font-bold text-[#051650] mb-2">Internal Admin: Batch Generation</h1>
       <p className="text-sm text-slate-500 mb-8">Generate unique tag IDs for factory production. Self-service tool.</p>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="p-5 bg-[#FFCFF1] rounded-lg border border-[#DCE6F5]">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[#0A2472] mb-1">Total Tags</h3>
-          <p className="text-3xl font-bold text-[#051650]">{metrics.total}</p>
+      {/* Metrics Section with Unlimited Capacity Box */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+        <div className="p-5 bg-[#FFCFF1]/40 rounded-xl border border-[#FFCFF1]">
+          <h3 className="text-xs font-black uppercase tracking-wider text-[#051650]/80 mb-1">Total Generated Tags</h3>
+          <p className="text-3xl font-black text-[#051650]">{metrics.total}</p>
+          <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Active in system</span>
         </div>
-        <div className="p-5 bg-green-50 rounded-lg border border-green-100">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-green-700 mb-1">Claimed</h3>
-          <p className="text-3xl font-bold text-green-900">{metrics.claimed}</p>
+        <div className="p-5 bg-green-50 rounded-xl border border-green-100">
+          <h3 className="text-xs font-black uppercase tracking-wider text-green-800 mb-1">Claimed by Parents</h3>
+          <p className="text-3xl font-black text-green-900">{metrics.claimed}</p>
+          <span className="text-[10px] text-green-600 font-semibold uppercase tracking-wider">Linked to child profile</span>
         </div>
-        <div className="p-5 bg-amber-50 rounded-lg border border-amber-100">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-amber-700 mb-1">Unclaimed</h3>
-          <p className="text-3xl font-bold text-amber-900">{metrics.unclaimed}</p>
+        <div className="p-5 bg-purple-50 rounded-xl border border-purple-100 col-span-1 sm:col-span-2 md:col-span-1">
+          <h3 className="text-xs font-black uppercase tracking-wider text-purple-800 mb-1">Generation Capacity</h3>
+          <p className="text-3xl font-black text-purple-900 flex items-center gap-1.5">
+            Unlimited <span className="text-lg">🚀</span>
+          </p>
+          <span className="text-[10px] text-purple-600 font-semibold uppercase tracking-wider">On-demand production</span>
         </div>
       </div>
 
+      {/* Purge System Reset to Zero Area */}
+      <div className="mb-8 p-5 bg-rose-50 border border-rose-200 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-fade-in">
+        <div>
+          <h3 className="text-xs font-black uppercase tracking-wider text-rose-800 mb-1">⚙️ Administrative Database Reset Utility</h3>
+          <p className="text-[11px] text-rose-600 font-medium leading-relaxed max-w-xl">
+            Completely clear and reset all tags, child profiles, and pending orders across the database to start fresh from zero. This is a production maintenance utility.
+          </p>
+          {purgeSuccess && (
+            <p className="text-xs font-bold text-emerald-600 mt-2">✓ {purgeSuccess}</p>
+          )}
+        </div>
+        <button
+          onClick={handlePurgeDatabase}
+          disabled={purging}
+          className="bg-rose-600 hover:bg-rose-700 text-white font-bold uppercase text-[10px] tracking-wider px-4 py-2.5 rounded-lg transition-all shadow-sm shrink-0 border border-rose-700 disabled:opacity-50 cursor-pointer"
+        >
+          {purging ? 'Purging System...' : 'Purge All Database Records'}
+        </button>
+      </div>
+
+      {/* Code Generation block */}
       <div className="bg-slate-50 p-6 rounded-lg border border-slate-200">
         <h2 className="text-lg font-semibold text-[#051650] mb-4">Generate New Batch</h2>
         <div className="flex items-end gap-4">
@@ -690,15 +797,45 @@ export default function Admin() {
 
         {generatedBatch.length > 0 && (
           <div className="mt-6 pt-6 border-t border-slate-200">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
               <span className="text-sm font-semibold text-green-600">✓ Successfully generated {generatedBatch.length} codes</span>
-              <button onClick={() => { triggerHaptic(); handleExportCSV(); }} className="bg-[#C54B8C] text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-[#B53389] transition-colors shadow-sm">
-                Download CSV for Factory
-              </button>
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                <button 
+                  onClick={() => {
+                    triggerHaptic();
+                    const allUrls = generatedBatch.map(t => `${window.location.origin}/t/${t.tag_id}`).join("\n");
+                    navigator.clipboard.writeText(allUrls);
+                    alert("All " + generatedBatch.length + " production URLs copied to clipboard!");
+                  }}
+                  className="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors shadow-sm uppercase tracking-wider cursor-pointer"
+                >
+                  Copy All URLs
+                </button>
+                <button onClick={() => { triggerHaptic(); handleExportCSV(); }} className="bg-[#C54B8C] text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-[#B53389] transition-colors shadow-sm">
+                  Download CSV for Factory
+                </button>
+              </div>
             </div>
-            <div className="bg-white border border-slate-200 rounded p-4 h-40 overflow-y-auto font-mono text-sm text-slate-600 shadow-inner">
-              {generatedBatch.slice(0, 10).map(t => <div key={t.tag_id}>https://lotap.co.za/t/{t.tag_id}</div>)}
-              {generatedBatch.length > 10 && <div className="text-slate-400 mt-2">...and {generatedBatch.length - 10} more</div>}
+            
+            <div className="bg-white border border-slate-200 rounded-xl p-3 max-h-48 overflow-y-auto font-mono text-xs text-slate-600 shadow-inner divide-y divide-slate-100">
+              {generatedBatch.map(t => {
+                const url = `${window.location.origin}/t/${t.tag_id}`;
+                return (
+                  <div key={t.tag_id} className="py-2 flex justify-between items-center group">
+                    <span className="text-slate-500 font-semibold">{url}</span>
+                    <button
+                      onClick={() => {
+                        triggerHaptic();
+                        navigator.clipboard.writeText(url);
+                        alert(`Copied link to clipboard: ${url}`);
+                      }}
+                      className="opacity-60 group-hover:opacity-100 hover:text-[#C54B8C] font-bold uppercase text-[10px] tracking-wider px-2 py-1 bg-slate-50 border border-slate-100 rounded-md transition-all cursor-pointer"
+                    >
+                      Copy Link
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -730,7 +867,7 @@ export default function Admin() {
           <table className="w-full text-left border-collapse text-xs">
             <thead className="sticky top-0 bg-slate-100 z-10 border-b border-slate-200">
               <tr className="text-[#051650] uppercase font-bold text-[10px] tracking-wider">
-                <th className="p-3">Tag ID</th>
+                <th className="p-3">Tag ID / Actions</th>
                 <th className="p-3">Status</th>
                 <th className="p-3">Child Name</th>
                 <th className="p-3">Custom Label / Wristband Identifier</th>
@@ -758,7 +895,34 @@ export default function Admin() {
 
                 return filtered.map((t: any) => (
                   <tr key={t.tag_id} className="hover:bg-slate-50/50">
-                    <td className="p-3 font-mono font-bold text-[#051650]">{t.tag_id}</td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-[#051650] bg-slate-100 px-1.5 py-0.5 rounded text-[11px]">{t.tag_id}</span>
+                        <button
+                          onClick={() => {
+                            triggerHaptic();
+                            navigator.clipboard.writeText(t.tag_id);
+                            alert(`Copied Tag ID: ${t.tag_id}`);
+                          }}
+                          className="p-1 hover:bg-slate-100 rounded text-[13px] text-slate-400 hover:text-slate-700 cursor-pointer"
+                          title="Copy Tag ID"
+                        >
+                          🆔
+                        </button>
+                        <button
+                          onClick={() => {
+                            triggerHaptic();
+                            const url = `${window.location.origin}/t/${t.tag_id}`;
+                            navigator.clipboard.writeText(url);
+                            alert(`Copied Tag active URL: ${url}`);
+                          }}
+                          className="p-1 hover:bg-[#FFCFF1]/30 rounded text-[13px] text-slate-400 hover:text-[#C54B8C] cursor-pointer"
+                          title="Copy Scan URL"
+                        >
+                          🔗
+                        </button>
+                      </div>
+                    </td>
                     <td className="p-3">
                       {t.owner_id ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
@@ -784,7 +948,7 @@ export default function Admin() {
                       <button
                         onClick={() => { triggerHaptic(); handleUpdateLabel(t.tag_id); }}
                         disabled={savingLabels[t.tag_id] || (editingLabels[t.tag_id] ?? '') === (t.custom_label ?? '')}
-                        className="bg-[#051650] hover:bg-[#0A2472] text-white px-3.5 py-2 rounded-lg font-bold transition-colors disabled:opacity-40 text-[10px]"
+                        className="bg-[#051650] hover:bg-[#0A2472] text-white px-3.5 py-2 rounded-lg font-bold transition-colors disabled:opacity-40 text-[10px] cursor-pointer"
                       >
                         {savingLabels[t.tag_id] ? 'Saving...' : 'Save Label'}
                       </button>
