@@ -84,6 +84,9 @@ export default function Admin() {
   const [savingLabels, setSavingLabels] = useState<Record<string, boolean>>({});
 
   const [orders, setOrders] = useState<any[]>([]);
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderFilterStatus, setOrderFilterStatus] = useState<'all' | 'pending' | 'fulfilled'>('all');
+  const [selectedOrderModal, setSelectedOrderModal] = useState<any | null>(null);
   const [updatingOrderStatus, setUpdatingOrderStatus] = useState<Record<string, boolean>>({});
   const [copiedRecords, setCopiedRecords] = useState<Record<string, boolean>>({});
   const [resendStatus, setResendStatus] = useState<{ configured: boolean; fromEmail: string } | null>(null);
@@ -994,59 +997,308 @@ export default function Admin() {
 
       {/* Orders List */}
       <div className="bg-slate-50 p-6 rounded-lg border border-slate-200 mt-6">
-        <h2 className="text-lg font-bold text-[#051650] flex items-center gap-2 mb-4">
-          <span>📦</span> Wristband Orders
-        </h2>
-        
-        <div className="overflow-x-auto bg-white rounded-lg border border-slate-200 shadow-sm max-h-[420px] overflow-y-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead className="sticky top-0 bg-slate-100 z-10 border-b border-slate-200">
-              <tr className="text-[#051650] uppercase font-bold text-[10px] tracking-wider">
-                <th className="p-3">Order Date</th>
-                <th className="p-3">Customer</th>
-                <th className="p-3">Contact</th>
-                <th className="p-3">Quantity</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {orders.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
-                    No orders yet
-                  </td>
-                </tr>
-              ) : (
-                orders.map((o: any) => (
-                  <tr key={o.id} className="hover:bg-slate-50/50">
-                    <td className="p-3 text-slate-500 whitespace-nowrap">{new Date(o.created_at).toLocaleString()}</td>
-                    <td className="p-3 font-semibold text-[#051650]">{o.customer_name}</td>
-                    <td className="p-3 text-slate-600">{o.customer_contact}</td>
-                    <td className="p-3 font-mono font-bold text-[#C54B8C] text-sm">{o.quantity}</td>
-                    <td className="p-3">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${o.status === 'fulfilled' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>
-                        {o.status}
-                      </span>
-                    </td>
-                    <td className="p-3 text-right">
-                      {o.status === 'pending' && (
-                        <button
-                          onClick={() => { triggerHaptic(); updateOrderStatus(o.id, 'fulfilled'); }}
-                          disabled={updatingOrderStatus[o.id]}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg font-bold transition-colors disabled:opacity-40 text-[10px] shadow-sm"
-                        >
-                          {updatingOrderStatus[o.id] ? 'Updating...' : 'Mark Fulfilled'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-[#051650] flex items-center gap-2">
+              <span>📦</span> Customer Wristband Orders ({orders.length} Total)
+            </h2>
+            <p className="text-xs text-slate-500">
+              Review customer orders, inspect delivery addresses & wristband color/size specifications, and update dispatch status.
+            </p>
+          </div>
+
+          {/* Search & Status Filter Controls */}
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+            <input 
+              type="text"
+              placeholder="🔍 Search customer name, contact, address..."
+              value={orderSearch}
+              onChange={(e) => setOrderSearch(e.target.value)}
+              className="p-2 border border-slate-300 rounded-lg text-xs bg-white text-[#051650] font-medium focus:outline-none focus:ring-2 focus:ring-[#051650] w-full sm:w-56"
+            />
+            <div className="flex items-center bg-white p-1 rounded-lg border border-slate-200 text-xs">
+              {(['all', 'pending', 'fulfilled'] as const).map(status => (
+                <button
+                  key={status}
+                  onClick={() => { triggerHaptic(); setOrderFilterStatus(status); }}
+                  className={`px-3 py-1 rounded-md font-extrabold uppercase text-[10px] tracking-wider transition-all cursor-pointer ${
+                    orderFilterStatus === status
+                      ? 'bg-[#051650] text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {status}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
+
+        {/* Order Fulfillment Operational Guide */}
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50/60 p-5 rounded-xl border border-amber-200 mb-6 text-slate-700">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-base">📋</span>
+            <h3 className="text-xs font-black uppercase tracking-wider text-[#051650]">Admin Order Processing & Fulfillment Checklist</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 text-xs">
+            <div className="bg-white p-3 rounded-lg border border-amber-100 shadow-2xs">
+              <div className="font-bold text-[#051650] mb-1 flex items-center gap-1.5">
+                <span className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded text-[10px] font-mono font-black">1</span>
+                Review Order Details
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Open the Orders tab on the Admin Dashboard. Review incoming order details: customer name, shipping address, quantity, selected wristband colors/sizes.
+              </p>
+            </div>
+            <div className="bg-white p-3 rounded-lg border border-amber-100 shadow-2xs">
+              <div className="font-bold text-[#051650] mb-1 flex items-center gap-1.5">
+                <span className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded text-[10px] font-mono font-black">2</span>
+                Package & Dispatch Stock
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Take physical pre-encoded NFC wristbands from stock matching the selected colors/sizes, package them safely, and ship them to the customer's delivery address.
+              </p>
+            </div>
+            <div className="bg-white p-3 rounded-lg border border-amber-100 shadow-2xs">
+              <div className="font-bold text-[#051650] mb-1 flex items-center gap-1.5">
+                <span className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded text-[10px] font-mono font-black">3</span>
+                Mark as Fulfilled
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Once shipped, click <span className="font-bold text-emerald-700">Mark Fulfilled</span> on the order table below to complete the dispatch workflow.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Filtered Orders Table */}
+        {(() => {
+          const q = orderSearch.toLowerCase().trim();
+          const filteredOrders = orders.filter(o => {
+            const matchesStatus = orderFilterStatus === 'all' || o.status === orderFilterStatus;
+            const textToSearch = `${o.customer_name || ''} ${o.customer_contact || ''} ${o.shipping_address || ''} ${o.color || ''} ${o.size || ''} ${o.details || ''}`.toLowerCase();
+            const matchesQuery = !q || textToSearch.includes(q);
+            return matchesStatus && matchesQuery;
+          });
+
+          return (
+            <div className="overflow-x-auto bg-white rounded-lg border border-slate-200 shadow-sm max-h-[500px] overflow-y-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="sticky top-0 bg-slate-100 z-10 border-b border-slate-200">
+                  <tr className="text-[#051650] uppercase font-bold text-[10px] tracking-wider">
+                    <th className="p-3">Order Date</th>
+                    <th className="p-3">Customer Name</th>
+                    <th className="p-3">Contact</th>
+                    <th className="p-3">Delivery Address</th>
+                    <th className="p-3">Color & Size Specs</th>
+                    <th className="p-3 text-center">Qty</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-8 text-center text-slate-400 font-medium">
+                        No orders match your filter criteria ({orderFilterStatus !== 'all' ? orderFilterStatus : 'all'})
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredOrders.map((o: any) => {
+                      const displayAddress = o.shipping_address || (o.customer_contact?.includes('Delivery Address:') ? o.customer_contact.split('Delivery Address:')[1]?.split('|')[0]?.trim() : 'Standard Delivery');
+                      const displayColor = o.color || (o.customer_contact?.includes('Color:') ? o.customer_contact.split('Color:')[1]?.split('|')[0]?.trim() : 'Navy Blue');
+                      const displaySize = o.size || (o.customer_contact?.includes('Size:') ? o.customer_contact.split('Size:')[1]?.split(']')[0]?.trim() : 'Kids Standard');
+
+                      return (
+                        <tr key={o.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="p-3 text-slate-500 whitespace-nowrap font-medium text-[11px]">
+                            {new Date(o.created_at).toLocaleString()}
+                          </td>
+                          <td className="p-3 font-extrabold text-[#051650] whitespace-nowrap">
+                            {o.customer_name}
+                          </td>
+                          <td className="p-3 text-slate-600 font-medium whitespace-nowrap">
+                            {o.customer_contact?.split('[')[0]?.trim() || o.customer_contact}
+                          </td>
+                          <td className="p-3 text-slate-700 max-w-xs truncate" title={displayAddress}>
+                            <span className="bg-slate-50 px-2 py-1 rounded border border-slate-200 font-medium text-[11px]">
+                              📍 {displayAddress}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex flex-col gap-0.5 text-[11px]">
+                              <span className="font-bold text-[#051650]">🎨 {displayColor}</span>
+                              <span className="text-slate-500 font-semibold">📏 {displaySize}</span>
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className="font-mono font-black text-[#C54B8C] bg-pink-50 px-2.5 py-1 rounded-full border border-pink-100 text-xs">
+                              {o.quantity}
+                            </span>
+                          </td>
+                          <td className="p-3 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${o.status === 'fulfilled' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>
+                              {o.status === 'fulfilled' ? '✓ Fulfilled' : '⏳ Pending'}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  triggerHaptic();
+                                  setSelectedOrderModal(o);
+                                }}
+                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[10px] rounded-lg border border-slate-200 transition-all cursor-pointer uppercase tracking-wider"
+                                title="View complete order breakdown"
+                              >
+                                Details
+                              </button>
+                              
+                              <button
+                                onClick={() => {
+                                  triggerHaptic();
+                                  const dispatchSummary = `ORDER SUMMARY (#${o.id.slice(0, 8)})\nCustomer: ${o.customer_name}\nContact: ${o.customer_contact?.split('[')[0]?.trim()}\nQuantity: ${o.quantity}\nColor: ${displayColor}\nSize: ${displaySize}\nDelivery Address: ${displayAddress}`;
+                                  navigator.clipboard.writeText(dispatchSummary);
+                                  alert('Order details copied to clipboard!');
+                                }}
+                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#051650] font-bold text-[10px] rounded-lg border border-slate-200 transition-all cursor-pointer uppercase tracking-wider"
+                                title="Copy order information for dispatch/courier label"
+                              >
+                                📋 Copy
+                              </button>
+
+                              {o.status === 'pending' ? (
+                                <button
+                                  onClick={() => { triggerHaptic(); updateOrderStatus(o.id, 'fulfilled'); }}
+                                  disabled={updatingOrderStatus[o.id]}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-bold transition-colors disabled:opacity-40 text-[10px] shadow-xs cursor-pointer uppercase tracking-wider"
+                                >
+                                  {updatingOrderStatus[o.id] ? 'Updating...' : 'Mark Fulfilled'}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => { triggerHaptic(); updateOrderStatus(o.id, 'pending'); }}
+                                  disabled={updatingOrderStatus[o.id]}
+                                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-lg font-bold transition-colors disabled:opacity-40 text-[10px] cursor-pointer uppercase tracking-wider"
+                                >
+                                  Reset to Pending
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
       </div>
+
+      {/* Order Details Modal Popup */}
+      {selectedOrderModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 relative overflow-hidden">
+            <div className="flex justify-between items-start mb-4 pb-3 border-b border-slate-100">
+              <div>
+                <span className="text-[10px] font-black uppercase text-[#C54B8C] tracking-widest">LoTap Order Details</span>
+                <h3 className="text-xl font-black text-[#051650] uppercase font-serif tracking-tight">
+                  {selectedOrderModal.customer_name}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedOrderModal(null)}
+                className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full flex items-center justify-center font-bold transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs text-slate-700">
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                <span className="text-[10px] font-black uppercase text-slate-400 block mb-1">Customer Contact Information</span>
+                <p className="font-extrabold text-[#051650] text-sm">{selectedOrderModal.customer_name}</p>
+                <p className="text-slate-600 font-semibold">{selectedOrderModal.customer_contact?.split('[')[0]?.trim()}</p>
+                <p className="text-[10px] text-slate-400 mt-1">Placed on: {new Date(selectedOrderModal.created_at).toLocaleString()}</p>
+              </div>
+
+              <div className="bg-amber-50/80 p-3.5 rounded-2xl border border-amber-200">
+                <span className="text-[10px] font-black uppercase text-amber-800 block mb-1">Shipping & Delivery Address</span>
+                <p className="font-bold text-[#051650]">
+                  📍 {selectedOrderModal.shipping_address || (selectedOrderModal.customer_contact?.includes('Delivery Address:') ? selectedOrderModal.customer_contact.split('Delivery Address:')[1]?.split('|')[0]?.trim() : 'Standard Delivery')}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-pink-50/80 p-3 rounded-2xl border border-pink-200">
+                  <span className="text-[10px] font-black uppercase text-pink-800 block mb-1">Wristband Color</span>
+                  <p className="font-extrabold text-[#051650]">
+                    🎨 {selectedOrderModal.color || (selectedOrderModal.customer_contact?.includes('Color:') ? selectedOrderModal.customer_contact.split('Color:')[1]?.split('|')[0]?.trim() : 'Navy Blue')}
+                  </p>
+                </div>
+                <div className="bg-blue-50/80 p-3 rounded-2xl border border-blue-200">
+                  <span className="text-[10px] font-black uppercase text-blue-800 block mb-1">Wristband Size</span>
+                  <p className="font-extrabold text-[#051650]">
+                    📏 {selectedOrderModal.size || (selectedOrderModal.customer_contact?.includes('Size:') ? selectedOrderModal.customer_contact.split('Size:')[1]?.split(']')[0]?.trim() : 'Kids Standard')}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center p-3 bg-slate-100 rounded-2xl">
+                <div>
+                  <span className="text-[10px] font-black uppercase text-slate-500">Order Quantity</span>
+                  <p className="text-lg font-black text-[#C54B8C]">{selectedOrderModal.quantity} Wristband(s)</p>
+                </div>
+                <div>
+                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${selectedOrderModal.status === 'fulfilled' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>
+                    {selectedOrderModal.status === 'fulfilled' ? '✓ Fulfilled' : '⏳ Pending Dispatch'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-slate-100 flex gap-2">
+              <button
+                onClick={() => {
+                  triggerHaptic();
+                  const info = `ORDER SUMMARY (#${selectedOrderModal.id.slice(0, 8)})\nCustomer: ${selectedOrderModal.customer_name}\nContact: ${selectedOrderModal.customer_contact?.split('[')[0]?.trim()}\nQuantity: ${selectedOrderModal.quantity}\nColor: ${selectedOrderModal.color || 'Navy Blue'}\nSize: ${selectedOrderModal.size || 'Kids Standard'}\nShipping Address: ${selectedOrderModal.shipping_address || 'Standard Delivery'}`;
+                  navigator.clipboard.writeText(info);
+                  alert('Order information copied to clipboard!');
+                }}
+                className="flex-1 bg-slate-800 hover:bg-slate-900 text-white py-2.5 rounded-xl font-bold uppercase tracking-wider text-xs transition-colors"
+              >
+                📋 Copy Order Info
+              </button>
+
+              {selectedOrderModal.status === 'pending' ? (
+                <button
+                  onClick={() => {
+                    triggerHaptic();
+                    updateOrderStatus(selectedOrderModal.id, 'fulfilled');
+                    setSelectedOrderModal(prev => prev ? { ...prev, status: 'fulfilled' } : null);
+                  }}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl font-bold uppercase tracking-wider text-xs transition-colors"
+                >
+                  ✓ Mark as Fulfilled
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    triggerHaptic();
+                    updateOrderStatus(selectedOrderModal.id, 'pending');
+                    setSelectedOrderModal(prev => prev ? { ...prev, status: 'pending' } : null);
+                  }}
+                  className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-2.5 rounded-xl font-bold uppercase tracking-wider text-xs transition-colors"
+                >
+                  Reset to Pending
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
 
 

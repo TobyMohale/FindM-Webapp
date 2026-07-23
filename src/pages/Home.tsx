@@ -4,7 +4,14 @@ import lotapCover from '../assets/images/silicone_wristband_mockup_1784122040773
 
 export default function Home() {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({ name: '', number: '', bands: '' });
+  const [formData, setFormData] = useState({
+    name: '',
+    number: '',
+    bands: '1',
+    address: '',
+    color: 'Navy Blue',
+    size: 'Kids Standard (Medium)'
+  });
   const [selectedColor, setSelectedColor] = useState('#051650');
   const [activeTab, setActiveTab] = useState<string | null>('contacts');
   const [copyStatus, setCopyStatus] = useState('Copy');
@@ -18,18 +25,43 @@ export default function Home() {
 
     try {
       const { supabase } = await import('../lib/supabase');
-      const { error } = await supabase.from('orders').insert([{
+      const formattedDetails = `Delivery Address: ${formData.address || 'Not specified'} | Color: ${formData.color} | Size: ${formData.size}`;
+      
+      // Attempt rich insert with optional extended columns
+      let { error } = await supabase.from('orders').insert([{
         customer_name: formData.name,
         customer_contact: formData.number,
         quantity: parseInt(formData.bands) || 1,
-        status: 'pending'
+        status: 'pending',
+        shipping_address: formData.address,
+        color: formData.color,
+        size: formData.size,
+        details: formattedDetails
       }]);
+
+      // If schema lacks extended columns, fallback gracefully using contact text
+      if (error) {
+        const fallbackRes = await supabase.from('orders').insert([{
+          customer_name: formData.name,
+          customer_contact: `${formData.number} [${formattedDetails}]`,
+          quantity: parseInt(formData.bands) || 1,
+          status: 'pending'
+        }]);
+        error = fallbackRes.error;
+      }
       
       if (error) {
-        setSubmitMessage('Error: ' + error.message);
+        setSubmitMessage('Error submitting order: ' + error.message);
       } else {
-        setSubmitMessage('Thank you! We will be in touch soon regarding your LoTap bands.');
-        setFormData({ name: '', number: '', bands: '' });
+        setSubmitMessage('Thank you! Your order has been placed successfully. Our team will review the details and process dispatch.');
+        setFormData({
+          name: '',
+          number: '',
+          bands: '1',
+          address: '',
+          color: 'Navy Blue',
+          size: 'Kids Standard (Medium)'
+        });
       }
     } catch (err: any) {
       setSubmitMessage('Failed to submit order. Please try again.');
@@ -554,17 +586,61 @@ export default function Home() {
               </div>
             </div>
             
-            <div>
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">number of bands</label>
-              <input 
-                type="number" 
-                min="1"
-                required
-                placeholder="How many safety wristbands do you need?"
-                value={formData.bands}
-                onChange={(e) => setFormData({...formData, bands: e.target.value})}
-                className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-xs font-semibold text-[#051650] transition-all"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Quantity (Bands)</label>
+                <input 
+                  type="number" 
+                  min="1"
+                  required
+                  placeholder="How many safety wristbands?"
+                  value={formData.bands}
+                  onChange={(e) => setFormData({...formData, bands: e.target.value})}
+                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-xs font-semibold text-[#051650] transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Wristband Color</label>
+                <select
+                  value={formData.color}
+                  onChange={(e) => setFormData({...formData, color: e.target.value})}
+                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-xs font-semibold text-[#051650] transition-all"
+                >
+                  <option value="Navy Blue">Navy Blue 🔵</option>
+                  <option value="Soft Pink">Soft Pink 🌸</option>
+                  <option value="Stealth Black">Stealth Black ⬛</option>
+                  <option value="Neon Yellow">Neon Yellow 💛</option>
+                  <option value="Safety Red">Safety Red 🔴</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Wristband Size</label>
+                <select
+                  value={formData.size}
+                  onChange={(e) => setFormData({...formData, size: e.target.value})}
+                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-xs font-semibold text-[#051650] transition-all"
+                >
+                  <option value="Kids Small (Toddler 2-5 yrs)">Kids Small (Toddler 2-5 yrs)</option>
+                  <option value="Kids Standard (Medium 6-12 yrs)">Kids Standard (Medium 6-12 yrs)</option>
+                  <option value="Teen / Adult (Large 13+ yrs)">Teen / Adult (Large 13+ yrs)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Delivery / Shipping Address</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="Street Address, City, Postal Code"
+                  value={formData.address}
+                  onChange={(e) => setFormData({...formData, address: e.target.value})}
+                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-xs font-semibold text-[#051650] transition-all"
+                />
+              </div>
             </div>
             
             <button 
