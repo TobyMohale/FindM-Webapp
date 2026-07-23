@@ -194,12 +194,24 @@ if (hasRealSupabase && !isForcedMock()) {
             then: async function(onfulfilled: any) {
               await delay();
               const store = await getStore(actualTable);
-              let items = Object.values(store);
+              let items = Array.isArray(store) ? store : Object.values(store);
               if (this._col) {
-                if (this._col === 'tag_id' || this._col === 'id') {
-                  items = store[this._val] ? [store[this._val]] : [];
+                if (this._col === 'tag_id' || this._col === 'id' || this._col === 'code') {
+                  const directMatch = !Array.isArray(store) && store[this._val] ? [store[this._val]] : [];
+                  if (directMatch.length > 0) {
+                    items = directMatch;
+                  } else {
+                    items = items.filter((item: any) => 
+                      item && (
+                        item[this._col] === this._val ||
+                        item.tag_id === this._val ||
+                        item.id === this._val ||
+                        item.code === this._val
+                      )
+                    );
+                  }
                 } else {
-                  items = items.filter((item: any) => item[this._col] === this._val);
+                  items = items.filter((item: any) => item && item[this._col] === this._val);
                 }
               }
               if (this._orderCol) {
@@ -220,22 +232,31 @@ if (hasRealSupabase && !isForcedMock()) {
           eq: async (col: string, val: string) => {
             await delay();
             const store = await getStore(actualTable);
-            if (col === 'tag_id' || col === 'id') {
-              if (store[val]) {
-                store[val] = { ...store[val], ...payload };
-                await setStore(actualTable, store);
-                notifyMockListeners(actualTable, 'UPDATE', store[val]);
-                return { data: [store[val]], error: null };
+            let updated: any[] = [];
+
+            if (!Array.isArray(store) && store[val]) {
+              store[val] = { ...store[val], ...payload };
+              updated.push(store[val]);
+              notifyMockListeners(actualTable, 'UPDATE', store[val]);
+            } else if (Array.isArray(store)) {
+              for (let i = 0; i < store.length; i++) {
+                if (store[i] && (store[i][col] === val || store[i].tag_id === val || store[i].id === val || store[i].code === val)) {
+                  store[i] = { ...store[i], ...payload };
+                  updated.push(store[i]);
+                  notifyMockListeners(actualTable, 'UPDATE', store[i]);
+                }
               }
             } else {
-              let updated = [];
               for (const k of Object.keys(store)) {
-                if (store[k][col] === val) {
+                if (store[k] && (store[k][col] === val || store[k].tag_id === val || store[k].id === val || store[k].code === val)) {
                   store[k] = { ...store[k], ...payload };
                   updated.push(store[k]);
                   notifyMockListeners(actualTable, 'UPDATE', store[k]);
                 }
               }
+            }
+
+            if (updated.length > 0) {
               await setStore(actualTable, store);
               return { data: updated, error: null };
             }
