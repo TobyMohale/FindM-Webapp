@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase, generateId, hasRealSupabase, isForcedMock } from '../lib/supabase';
+import { supabase, generateId } from '../lib/supabase';
 import { useAdminTags } from '../hooks/useAdminTags';
 
 const triggerHaptic = () => {
@@ -451,28 +451,6 @@ export default function Admin() {
           {recoverySuccess && (
             <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-bold text-emerald-800 text-center space-y-3">
               <p>{recoverySuccess}</p>
-              {!hasRealSupabase && (
-                <div className="pt-2 border-t border-emerald-150">
-                  <p className="text-[10px] text-slate-500 font-normal mb-2 leading-relaxed">
-                    ⚙️ <strong>Development Sandbox Bypass</strong>: Since there is no production SMTP mail server connected in this browser preview, you can click the button below to simulate opening the secure link sent to your email inbox:
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      localStorage.setItem('findme_session', 'true');
-                      localStorage.setItem('findme_current_user', JSON.stringify({
-                        id: 'admin-owner',
-                        email: 'findmewebapp7@gmail.com',
-                        full_name: 'Lead Admin'
-                      }));
-                      navigate('/reset-password');
-                    }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-3 rounded-xl font-black uppercase tracking-wider text-[10px] transition-all cursor-pointer shadow-sm"
-                  >
-                    Simulate Reset Password Link →
-                  </button>
-                </div>
-              )}
             </div>
           )}
 

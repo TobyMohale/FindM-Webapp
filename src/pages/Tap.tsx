@@ -130,36 +130,19 @@ export default function TapView() {
               last_scanned_at: now
             });
 
-            // Fetch owner/parent profile details
-            try {
-              const { data: profileData, error: profileErr } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('id', tag.owner_id);
-              if (!profileErr && profileData && profileData.length > 0) {
-                const parent = profileData[0];
-                setParentProfile(parent);
-                
-                // Trigger Resend notification in the background
-                if (parent.email) {
-                  fetch('/api/notify/scan', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      tag_id: tag.tag_id,
-                      child_name: tag.child_name,
-                      parent_email: parent.email,
-                      scan_count: newScanCount,
-                      timestamp: now
-                    })
-                  }).then(res => res.json())
-                    .then(resData => console.log('Resend scan alert response:', resData))
-                    .catch(err => console.error('Resend scan alert error:', err));
-                }
-              }
-            } catch (pErr) {
-              console.warn("Error fetching parent profile:", pErr);
-            }
+            // Trigger Resend notification in the background
+            fetch('/api/notify/scan', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                tag_id: tag.tag_id,
+                child_name: tag.child_name,
+                scan_count: newScanCount,
+                timestamp: now
+              })
+            }).then(res => res.json())
+              .then(resData => console.log('Resend scan alert response:', resData))
+              .catch(err => console.error('Resend scan alert error:', err));
           }
         } else {
           // No tag found in database
@@ -241,23 +224,20 @@ export default function TapView() {
         setShareStatus(DICTIONARY[lang].locationShared);
         window.open(waLink, '_blank');
 
-        if (parentProfile?.email) {
-          fetch('/api/notify/location', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              tag_id: record.tag_id,
-              child_name: record.child_name,
-              parent_email: parentProfile.email,
-              latitude,
-              longitude,
-              place_name: 'Live GPS Coordinates',
-              timestamp: new Date().toISOString()
-            })
-          }).then(res => res.json())
-            .then(resData => console.log('Resend location alert response:', resData))
-            .catch(err => console.error('Resend location alert error:', err));
-        }
+        fetch('/api/notify/location', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tag_id: record.tag_id,
+            child_name: record.child_name,
+            latitude,
+            longitude,
+            place_name: 'Live GPS Coordinates',
+            timestamp: new Date().toISOString()
+          })
+        }).then(res => res.json())
+          .then(resData => console.log('Resend location alert response:', resData))
+          .catch(err => console.error('Resend location alert error:', err));
       },
       (err) => {
         console.warn("Geolocation failed:", err);
@@ -277,26 +257,23 @@ export default function TapView() {
     setShareStatus(`Opening WhatsApp with simulated location...`);
     window.open(waLink, '_blank');
 
-    if (parentProfile?.email) {
-      fetch('/api/notify/location', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tag_id: record.tag_id,
-          child_name: record.child_name,
-          parent_email: parentProfile.email,
-          latitude: lat,
-          longitude: lng,
-          place_name: placeName,
-          timestamp: new Date().toISOString()
-        })
-      }).then(res => res.json())
-        .then(resData => {
-          console.log('Resend location alert response:', resData);
-          setShareStatus(`WhatsApp opened & automatic location alert email sent via Resend!`);
-        })
-        .catch(err => console.error('Resend location alert error:', err));
-    }
+    fetch('/api/notify/location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tag_id: record.tag_id,
+        child_name: record.child_name,
+        latitude: lat,
+        longitude: lng,
+        place_name: placeName,
+        timestamp: new Date().toISOString()
+      })
+    }).then(res => res.json())
+      .then(resData => {
+        console.log('Resend location alert response:', resData);
+        setShareStatus(`WhatsApp opened & automatic location alert email sent via Resend!`);
+      })
+      .catch(err => console.error('Resend location alert error:', err));
   };
 
   const handleFinderAlertSubmit = (e: React.FormEvent) => {
@@ -326,28 +303,25 @@ export default function TapView() {
     setFinderAlertStatus(`Opening WhatsApp to alert parent...`);
     window.open(waLink, '_blank');
 
-    if (parentProfile?.email) {
-      fetch('/api/notify/finder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tag_id: record.tag_id,
-          child_name: record.child_name,
-          parent_email: parentProfile.email,
-          finder_name: finderName.trim(),
-          finder_phone: finderPhone.trim(),
-          custom_note: customNote.trim(),
-          timestamp: new Date().toISOString()
-        })
-      }).then(res => res.json())
-        .then(resData => {
-          console.log('Resend finder alert response:', resData);
-          if (resData.success && resData.sent) {
-            setFinderAlertStatus(prev => prev + " & sent an automatic email notification!");
-          }
-        })
-        .catch(err => console.error('Resend finder alert error:', err));
-    }
+    fetch('/api/notify/finder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tag_id: record.tag_id,
+        child_name: record.child_name,
+        finder_name: finderName.trim(),
+        finder_phone: finderPhone.trim(),
+        custom_note: customNote.trim(),
+        timestamp: new Date().toISOString()
+      })
+    }).then(res => res.json())
+      .then(resData => {
+        console.log('Resend finder alert response:', resData);
+        if (resData.success && resData.sent) {
+          setFinderAlertStatus(prev => prev + " & sent an automatic email notification!");
+        }
+      })
+      .catch(err => console.error('Resend finder alert error:', err));
   };
 
   if (loading) {

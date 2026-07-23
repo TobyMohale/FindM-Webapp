@@ -3,10 +3,89 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { Resend } from 'resend';
+import { createClient } from '@supabase/supabase-js';
 
 // Initialize Dotenv (though in this environment variables are pre-loaded)
 import dotenv from 'dotenv';
 dotenv.config();
+
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://ywpidzojetdhyezmkjxb.supabase.co';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+const supabaseAdmin = (supabaseUrl && supabaseServiceKey)
+  ? createClient(supabaseUrl, supabaseServiceKey)
+  : null;
+
+async function ensureAdminUser() {
+  if (!supabaseAdmin) {
+    console.warn("supabaseAdmin unavailable (SUPABASE_SERVICE_ROLE_KEY missing). Skipping auto admin user creation.");
+    return { success: false, reason: "SUPABASE_SERVICE_ROLE_KEY missing" };
+  }
+  const targetEmail = "findmewebapp7@gmail.com";
+  const targetPassword = "Findme_Pw101";
+
+  try {
+    const { data, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+    if (listError) {
+      console.error("Error listing Supabase users:", listError);
+      return { success: false, error: listError.message };
+    }
+
+    const users = data?.users || [];
+    const existingUser = users.find(u => u.email?.toLowerCase() === targetEmail.toLowerCase());
+
+    let userId = existingUser?.id;
+
+    if (existingUser) {
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
+        password: targetPassword,
+        email_confirm: true,
+        user_metadata: { full_name: 'Lead Admin' }
+      });
+      if (updateError) {
+        console.error("Error updating admin password:", updateError);
+        return { success: false, error: updateError.message };
+      }
+      console.log(`Updated password for admin user ${targetEmail}`);
+    } else {
+      const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email: targetEmail,
+        password: targetPassword,
+        email_confirm: true,
+        user_metadata: { full_name: 'Lead Admin' }
+      });
+      if (createError) {
+        console.error("Error creating admin user:", createError);
+        return { success: false, error: createError.message };
+      }
+      userId = newUser.user?.id;
+      console.log(`Created new admin user ${targetEmail}`);
+    }
+
+    if (userId) {
+      const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .upsert({
+          id: userId,
+          email: targetEmail,
+          full_name: 'Lead Admin',
+          popia_consent_accepted: true
+        }, { onConflict: 'id' });
+
+      if (profileError) {
+        console.warn("Notice updating profiles table for admin:", profileError.message);
+      }
+    }
+
+    return { success: true, email: targetEmail };
+  } catch (err: any) {
+    console.error("Exception in ensureAdminUser:", err);
+    return { success: false, error: err.message };
+  }
+}
+
+// Automatically ensure admin user on server start
+ensureAdminUser().catch(err => console.error("Admin user auto setup error:", err));
 
 let resendInstance: Resend | null = null;
 
@@ -28,53 +107,6 @@ async function startServer() {
   // Middleware to parse JSON bodies
   app.use(express.json());
 
-  // --- SERVER-SIDE DB ENDPOINTS TO SYNC PRIVATE AND REGULAR TABS ---
-  let dbData: any = {
-    tags: {},
-    orders: [],
-    users: {
-      'mock-user-1': { id: 'mock-user-1', email: 'parent@example.com', full_name: 'Parent User', popia_consent_accepted: true },
-      'admin-owner': { id: 'admin-owner', email: 'findmewebapp7@gmail.com', full_name: 'Lead Admin', popia_consent_accepted: true }
-    }
-  };
-
-  const DB_FILE = path.join(process.cwd(), "db.json");
-
-  // Load database from file
-  if (fs.existsSync(DB_FILE)) {
-    try {
-      const raw = fs.readFileSync(DB_FILE, "utf-8");
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        dbData = { ...dbData, ...parsed };
-      }
-    } catch (err) {
-      console.error("Error reading db.json, using defaults:", err);
-    }
-  }
-
-  const saveDb = () => {
-    try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2), "utf-8");
-    } catch (err) {
-      console.error("Error writing db.json:", err);
-    }
-  };
-
-  // Get store collection
-  app.get("/api/mock-db/:key", (req, res) => {
-    const { key } = req.params;
-    res.json(dbData[key] || (key === 'orders' ? [] : {}));
-  });
-
-  // Set store collection or merge
-  app.post("/api/mock-db/:key", (req, res) => {
-    const { key } = req.params;
-    dbData[key] = req.body.data;
-    saveDb();
-    res.json({ success: true });
-  });
-
   // API route to get current Resend configuration status
   app.get("/api/resend-status", (req, res) => {
     const hasKey = Boolean(process.env.RESEND_API_KEY);
@@ -89,13 +121,59 @@ async function startServer() {
     });
   });
 
+  // API route to ensure admin user credentials
+  app.post("/api/admin/setup-auth-user", async (req, res) => {
+    const result = await ensureAdminUser();
+    res.json(result);
+  });
+
+  async function resolveTagAndParent(tag_id?: string, providedEmail?: string, providedChildName?: string) {
+    let email = providedEmail || null;
+    let childName = providedChildName || null;
+
+    if (tag_id) {
+      if ((!email || !childName) && supabaseAdmin) {
+        try {
+          const { data: tagData } = await supabaseAdmin
+            .from('tags')
+            .select('child_name, owner_id')
+            .eq('tag_id', tag_id)
+            .maybeSingle();
+
+          if (tagData) {
+            if (!childName && tagData.child_name) {
+              childName = tagData.child_name;
+            }
+            if (!email && tagData.owner_id) {
+              const { data: profileData } = await supabaseAdmin
+                .from('profiles')
+                .select('email')
+                .eq('id', tagData.owner_id)
+                .maybeSingle();
+
+              if (profileData?.email) {
+                email = profileData.email;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Error looking up tag/parent via supabaseAdmin:", e);
+        }
+      }
+    }
+
+    return { email, childName: childName || 'Safety Tag' };
+  }
+
   // Send scan notification email
   app.post("/api/notify/scan", async (req, res) => {
     try {
       const { tag_id, child_name, parent_email, scan_count, timestamp } = req.body;
       
-      if (!parent_email) {
-        return res.status(400).json({ error: "parent_email is required" });
+      const { email, childName } = await resolveTagAndParent(tag_id, parent_email, child_name);
+
+      if (!email) {
+        return res.json({ success: true, sent: false, note: "No parent email found for this tag" });
       }
 
       const formattedTime = new Date(timestamp || Date.now()).toLocaleString("en-ZA", {
@@ -104,7 +182,7 @@ async function startServer() {
         timeStyle: "medium"
       });
 
-      const subject = `🚨 LoTap Scan Alert: ${child_name || 'Safety Tag'} was scanned!`;
+      const subject = `🚨 LoTap Scan Alert: ${childName || 'Safety Tag'} was scanned!`;
       const html = `
         <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; color: #0f172a;">
           <div style="text-align: center; margin-bottom: 24px; border-bottom: 2px solid #FFCFF1; padding-bottom: 16px;">
@@ -122,11 +200,11 @@ async function startServer() {
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 14px;">
             <tr>
               <td style="padding: 8px 0; color: #64748b; font-weight: 600;">Child's Profile</td>
-              <td style="padding: 8px 0; color: #051650; font-weight: 700; text-align: right;">${child_name || 'Unnamed Child'}</td>
+              <td style="padding: 8px 0; color: #051650; font-weight: 700; text-align: right;">${childName || 'Unnamed Child'}</td>
             </tr>
             <tr>
               <td style="padding: 8px 0; color: #64748b; font-weight: 600;">Wristband ID</td>
-              <td style="padding: 8px 0; color: #051650; font-weight: 700; font-family: monospace; text-align: right;">${tag_id}</td>
+              <td style="padding: 8px 0; color: #051650; font-weight: 700; font-family: monospace; text-align: right;">${tag_id || 'N/A'}</td>
             </tr>
             <tr>
               <td style="padding: 8px 0; color: #64748b; font-weight: 600;">Scan Number</td>
@@ -162,7 +240,7 @@ async function startServer() {
         const fromEmail = (rawFromEmail && rawFromEmail !== "onboarding@resend.dev")
           ? rawFromEmail
           : "alerts@lotap.co.za";
-        const toEmail = parent_email;
+        const toEmail = email;
         if (fromEmail === "onboarding@resend.dev") {
           usedSandbox = true;
         }
@@ -179,7 +257,7 @@ async function startServer() {
         success: true,
         sent: !!apiKey,
         usedSandbox,
-        recipient: parent_email,
+        recipient: email,
         subject,
         html,
         info
@@ -195,8 +273,10 @@ async function startServer() {
     try {
       const { tag_id, child_name, parent_email, finder_name, finder_phone, custom_note, timestamp } = req.body;
       
-      if (!parent_email) {
-        return res.status(400).json({ error: "parent_email is required" });
+      const { email, childName } = await resolveTagAndParent(tag_id, parent_email, child_name);
+
+      if (!email) {
+        return res.json({ success: true, sent: false, note: "No parent email found for this tag" });
       }
 
       const formattedTime = new Date(timestamp || Date.now()).toLocaleString("en-ZA", {
@@ -205,7 +285,7 @@ async function startServer() {
         timeStyle: "medium"
       });
 
-      const subject = `🚨 EMERGENCY ALERT: Finder has submitted details for ${child_name || 'your child'}!`;
+      const subject = `🚨 EMERGENCY ALERT: Finder has submitted details for ${childName || 'your child'}!`;
       const html = `
         <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #fee2e2; border-radius: 16px; background-color: #ffffff; color: #0f172a;">
           <div style="text-align: center; margin-bottom: 24px; border-bottom: 2px solid #ef4444; padding-bottom: 16px;">
@@ -268,7 +348,7 @@ async function startServer() {
         const fromEmail = (rawFromEmail && rawFromEmail !== "onboarding@resend.dev")
           ? rawFromEmail
           : "alerts@lotap.co.za";
-        const toEmail = parent_email;
+        const toEmail = email;
         if (fromEmail === "onboarding@resend.dev") {
           usedSandbox = true;
         }
@@ -285,7 +365,7 @@ async function startServer() {
         success: true,
         sent: !!apiKey,
         usedSandbox,
-        recipient: parent_email,
+        recipient: email,
         subject,
         html,
         info
@@ -301,8 +381,10 @@ async function startServer() {
     try {
       const { tag_id, child_name, parent_email, latitude, longitude, place_name, timestamp } = req.body;
       
-      if (!parent_email) {
-        return res.status(400).json({ error: "parent_email is required" });
+      const { email, childName } = await resolveTagAndParent(tag_id, parent_email, child_name);
+
+      if (!email) {
+        return res.json({ success: true, sent: false, note: "No parent email found for this tag" });
       }
 
       const formattedTime = new Date(timestamp || Date.now()).toLocaleString("en-ZA", {
@@ -313,7 +395,7 @@ async function startServer() {
 
       const mapsLink = `https://maps.google.com/?q=${latitude},${longitude}`;
 
-      const subject = `📍 LIVE GPS LOCATION shared for ${child_name || 'your child'}!`;
+      const subject = `📍 LIVE GPS LOCATION shared for ${childName || 'your child'}!`;
       const html = `
         <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #dbeafe; border-radius: 16px; background-color: #ffffff; color: #0f172a;">
           <div style="text-align: center; margin-bottom: 24px; border-bottom: 2px solid #2563eb; padding-bottom: 16px;">
@@ -331,7 +413,7 @@ async function startServer() {
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 14px;">
             <tr>
               <td style="padding: 8px 0; color: #64748b; font-weight: 600;">Child Name</td>
-              <td style="padding: 8px 0; color: #1e3a8a; font-weight: 700; text-align: right;">${child_name || 'Unnamed Child'}</td>
+              <td style="padding: 8px 0; color: #1e3a8a; font-weight: 700; text-align: right;">${childName || 'Unnamed Child'}</td>
             </tr>
             <tr>
               <td style="padding: 8px 0; color: #64748b; font-weight: 600;">Latitude / Longitude</td>
@@ -378,7 +460,7 @@ async function startServer() {
         const fromEmail = (rawFromEmail && rawFromEmail !== "onboarding@resend.dev")
           ? rawFromEmail
           : "alerts@lotap.co.za";
-        const toEmail = parent_email;
+        const toEmail = email;
         if (fromEmail === "onboarding@resend.dev") {
           usedSandbox = true;
         }
@@ -395,7 +477,7 @@ async function startServer() {
         success: true,
         sent: !!apiKey,
         usedSandbox,
-        recipient: parent_email,
+        recipient: email,
         subject,
         html,
         info
