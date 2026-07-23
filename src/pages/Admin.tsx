@@ -222,16 +222,6 @@ export default function Admin() {
     const emailLowerInput = adminEmail.toLowerCase().trim();
     const passwordInput = adminPassword;
 
-    // Secure, professional direct verification for the designated administrator owner account
-    if (emailLowerInput === 'findmewebapp7@gmail.com' && passwordInput === 'Findme_Pw101') {
-      setAuthLoading(false);
-      setIsAdmin(true);
-      setAuthorized(true);
-      setPassError('');
-      triggerHaptic();
-      return;
-    }
-
     const { data, error } = await supabase.auth.signInWithPassword({
       email: emailLowerInput,
       password: passwordInput,

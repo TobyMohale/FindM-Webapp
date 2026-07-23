@@ -22,7 +22,7 @@ async function ensureAdminUser() {
     return { success: false, reason: "SUPABASE_SERVICE_ROLE_KEY missing" };
   }
   const targetEmail = "findmewebapp7@gmail.com";
-  const targetPassword = "Findme_Pw101";
+  const setupPassword = process.env.ADMIN_SETUP_PASSWORD;
 
   try {
     const { data, error: listError } = await supabaseAdmin.auth.admin.listUsers();
@@ -37,20 +37,29 @@ async function ensureAdminUser() {
     let userId = existingUser?.id;
 
     if (existingUser) {
-      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
-        password: targetPassword,
-        email_confirm: true,
-        user_metadata: { full_name: 'Lead Admin' }
-      });
-      if (updateError) {
-        console.error("Error updating admin password:", updateError);
-        return { success: false, error: updateError.message };
+      if (setupPassword) {
+        const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
+          password: setupPassword,
+          email_confirm: true,
+          user_metadata: { full_name: 'Lead Admin' }
+        });
+        if (updateError) {
+          console.error("Error updating admin password:", updateError);
+          return { success: false, error: updateError.message };
+        }
+        console.log(`Updated password for admin user ${targetEmail} from ADMIN_SETUP_PASSWORD`);
+      } else {
+        console.log(`Admin user ${targetEmail} already exists. ADMIN_SETUP_PASSWORD not provided; preserving existing password.`);
       }
-      console.log(`Updated password for admin user ${targetEmail}`);
     } else {
+      if (!setupPassword) {
+        console.warn(`Admin user ${targetEmail} does not exist, but ADMIN_SETUP_PASSWORD is not set. Skipping user creation.`);
+        return { success: false, reason: "ADMIN_SETUP_PASSWORD missing" };
+      }
+
       const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email: targetEmail,
-        password: targetPassword,
+        password: setupPassword,
         email_confirm: true,
         user_metadata: { full_name: 'Lead Admin' }
       });
@@ -127,38 +136,36 @@ async function startServer() {
     res.json(result);
   });
 
-  async function resolveTagAndParent(tag_id?: string, providedEmail?: string, providedChildName?: string) {
-    let email = providedEmail || null;
-    let childName = providedChildName || null;
+  async function resolveTagAndParent(tag_id?: string) {
+    let email: string | null = null;
+    let childName: string | null = null;
 
-    if (tag_id) {
-      if ((!email || !childName) && supabaseAdmin) {
-        try {
-          const { data: tagData } = await supabaseAdmin
-            .from('tags')
-            .select('child_name, owner_id')
-            .eq('tag_id', tag_id)
-            .maybeSingle();
+    if (tag_id && supabaseAdmin) {
+      try {
+        const { data: tagData } = await supabaseAdmin
+          .from('tags')
+          .select('child_name, owner_id')
+          .eq('tag_id', tag_id)
+          .maybeSingle();
 
-          if (tagData) {
-            if (!childName && tagData.child_name) {
-              childName = tagData.child_name;
-            }
-            if (!email && tagData.owner_id) {
-              const { data: profileData } = await supabaseAdmin
-                .from('profiles')
-                .select('email')
-                .eq('id', tagData.owner_id)
-                .maybeSingle();
+        if (tagData) {
+          if (tagData.child_name) {
+            childName = tagData.child_name;
+          }
+          if (tagData.owner_id) {
+            const { data: profileData } = await supabaseAdmin
+              .from('profiles')
+              .select('email')
+              .eq('id', tagData.owner_id)
+              .maybeSingle();
 
-              if (profileData?.email) {
-                email = profileData.email;
-              }
+            if (profileData?.email) {
+              email = profileData.email;
             }
           }
-        } catch (e) {
-          console.warn("Error looking up tag/parent via supabaseAdmin:", e);
         }
+      } catch (e) {
+        console.warn("Error looking up tag/parent via supabaseAdmin:", e);
       }
     }
 
@@ -168,9 +175,9 @@ async function startServer() {
   // Send scan notification email
   app.post("/api/notify/scan", async (req, res) => {
     try {
-      const { tag_id, child_name, parent_email, scan_count, timestamp } = req.body;
+      const { tag_id, scan_count, timestamp } = req.body;
       
-      const { email, childName } = await resolveTagAndParent(tag_id, parent_email, child_name);
+      const { email, childName } = await resolveTagAndParent(tag_id);
 
       if (!email) {
         return res.json({ success: true, sent: false, note: "No parent email found for this tag" });
@@ -271,9 +278,9 @@ async function startServer() {
   // Send finder alert notification email
   app.post("/api/notify/finder", async (req, res) => {
     try {
-      const { tag_id, child_name, parent_email, finder_name, finder_phone, custom_note, timestamp } = req.body;
+      const { tag_id, finder_name, finder_phone, custom_note, timestamp } = req.body;
       
-      const { email, childName } = await resolveTagAndParent(tag_id, parent_email, child_name);
+      const { email, childName } = await resolveTagAndParent(tag_id);
 
       if (!email) {
         return res.json({ success: true, sent: false, note: "No parent email found for this tag" });
@@ -379,9 +386,9 @@ async function startServer() {
   // Send GPS/Location shared notification email
   app.post("/api/notify/location", async (req, res) => {
     try {
-      const { tag_id, child_name, parent_email, latitude, longitude, place_name, timestamp } = req.body;
+      const { tag_id, latitude, longitude, place_name, timestamp } = req.body;
       
-      const { email, childName } = await resolveTagAndParent(tag_id, parent_email, child_name);
+      const { email, childName } = await resolveTagAndParent(tag_id);
 
       if (!email) {
         return res.json({ success: true, sent: false, note: "No parent email found for this tag" });
