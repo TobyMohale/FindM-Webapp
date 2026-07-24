@@ -1,9 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import lotapCover from '../assets/images/silicone_wristband_mockup_1784122040773.jpg';
+const lotapCover = 'https://res.cloudinary.com/dagphoc0j/image/upload/v1784885425/lotap-home-page_image_cwicdy.jpg';
 
 export default function Home() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (window.location.hash === '#order') {
+      setTimeout(() => {
+        const el = document.getElementById('order');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 150);
+    }
+  }, []);
   const [formData, setFormData] = useState({
     name: '',
     number: '',
@@ -108,18 +119,43 @@ export default function Home() {
             {/* Action card for portal setup and physical wristbands */}
             <div className="p-6 glass-liquid-card rounded-2xl shadow-sm space-y-4 relative overflow-hidden group hover:shadow-md transition-all duration-300 border border-[#FFCFF1]/40">
               
-              <h3 className="text-sm font-black uppercase text-[#051650] tracking-wider">Configure Your Portal</h3>
+              <div className="bg-[#FFCFF1]/60 border border-[#C54B8C]/30 rounded-xl p-3.5 flex items-start gap-3 text-xs text-[#051650]">
+                <span className="text-lg leading-none">🛒</span>
+                <div>
+                  <p className="font-extrabold text-[#051650] mb-0.5 uppercase tracking-wide">Notice: Order First, Then Set Up!</p>
+                  <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                    Please order your physical <strong>LoTap safety wristband</strong> first. Once ordered, you can easily set up your account and manage your child's profile details.
+                  </p>
+                </div>
+              </div>
+
+              <h3 className="text-sm font-black uppercase text-[#051650] tracking-wider pt-1">Configure Your Portal</h3>
               <p className="text-xs text-slate-500 font-medium leading-relaxed">
                 Connect your child's physical LoTap safety wearable to an emergency profile. Access your custom cloud dashboard to configure contact details, medical cards, and instant emergency guidelines anytime.
               </p>
 
-              {/* Set Up button (Pill shaped, matching draft button "SET UP") */}
-              <div className="pt-2 flex flex-wrap items-center gap-4">
+              {/* Action buttons */}
+              <div className="pt-2 flex flex-wrap items-center gap-3">
+                <a 
+                  href="#order"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const el = document.getElementById('order');
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }}
+                  className="bg-[#C54B8C] text-white px-6 py-3 rounded-full font-black text-xs uppercase tracking-wider hover:bg-[#B33B7B] transition-all shadow-md shadow-[#C54B8C]/20 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>🛒</span>
+                  <span>Order Wristband First</span>
+                </a>
                 <button 
                   onClick={() => navigate('/dashboard')} 
-                  className="bg-[#051650] text-white px-8 py-3 rounded-full font-black text-xs uppercase tracking-wider hover:bg-[#0A2472] transition-all shadow-md shadow-[#051650]/20"
+                  className="bg-[#051650] text-white px-6 py-3 rounded-full font-black text-xs uppercase tracking-wider hover:bg-[#0A2472] transition-all shadow-md shadow-[#051650]/20 flex items-center gap-1.5 cursor-pointer"
                 >
-                  SET UP PORTAL
+                  <span>⚙️</span>
+                  <span>Set Up Portal</span>
                 </button>
               </div>
 
@@ -535,7 +571,7 @@ export default function Home() {
         </div>
 
         {/* Call to Action Section - GET YOURS NOW */}
-        <div className="max-w-2xl mx-auto glass-liquid-card p-8 md:p-12 rounded-[32px] shadow-2xl relative overflow-hidden mt-16">
+        <div id="order" className="max-w-2xl mx-auto glass-liquid-card p-8 md:p-12 rounded-[32px] shadow-2xl relative overflow-hidden mt-16 scroll-mt-24">
           <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-[#FFCFF1]/40 to-transparent rounded-bl-full pointer-events-none"></div>
 
           {/* Form Header */}
@@ -631,11 +667,11 @@ export default function Home() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Delivery / Shipping Address</label>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Delivery Location / Address</label>
                 <input 
                   type="text" 
                   required
-                  placeholder="Street Address, City, Postal Code"
+                  placeholder="Street Address, City, or Delivery Location"
                   value={formData.address}
                   onChange={(e) => setFormData({...formData, address: e.target.value})}
                   className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-xs font-semibold text-[#051650] transition-all"

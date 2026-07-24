@@ -48,7 +48,21 @@ export default function Layout() {
             >
               ABOUT
             </Link>
-            
+            <a 
+              href="/#order"
+              onClick={(e) => {
+                if (location.pathname === '/') {
+                  e.preventDefault();
+                  const el = document.getElementById('order');
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth' });
+                  }
+                }
+              }}
+              className="text-xs font-black tracking-wider uppercase text-[#C54B8C] hover:text-[#051650] transition-all flex items-center gap-1 bg-[#FFCFF1]/50 px-3 py-1.5 rounded-full border border-[#C54B8C]/30 hover:bg-[#FFCFF1]"
+            >
+              🛒 ORDER
+            </a>
             <Link 
               to="/dashboard" 
               className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/claim') ? 'bg-[#FFCFF1] text-[#C54B8C]' : 'bg-[#051650] text-white hover:bg-[#0A2472]'}`}
@@ -92,6 +106,22 @@ export default function Layout() {
               >
                 ABOUT
               </Link>
+              <a 
+                href="/#order"
+                onClick={(e) => {
+                  handleLinkClick();
+                  if (location.pathname === '/') {
+                    e.preventDefault();
+                    const el = document.getElementById('order');
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }
+                }}
+                className="p-3 rounded-xl text-xs font-black tracking-wider uppercase transition-all bg-[#FFCFF1]/60 text-[#C54B8C] hover:bg-[#FFCFF1] flex items-center justify-center gap-1.5"
+              >
+                🛒 ORDER WRISTBAND
+              </a>
               <Link 
                 to="/dashboard" 
                 onClick={handleLinkClick}

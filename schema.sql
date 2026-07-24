@@ -48,6 +48,7 @@ create table public.tags (
     contacts jsonb default '[]'::jsonb not null,
     medical jsonb default '{"allergies": "", "conditions": "", "notes": ""}'::jsonb not null,
     custom_label text, -- Custom label assigned by administrators (e.g. 'Child-1-Wristband')
+    emergency_mode boolean default false not null,
     scan_count integer default 0 not null,
     last_scanned_at timestamp with time zone,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,

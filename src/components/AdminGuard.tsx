@@ -6,7 +6,7 @@ import { ShieldAlert, Key } from 'lucide-react';
 export default function AdminGuard({ children }: { children: React.ReactNode }) {
   const [authorized, setAuthorized] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [adminEmail, setAdminEmail] = useState('findmewebapp7@gmail.com');
+  const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
@@ -135,6 +135,7 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
               <input
                 type="email"
                 required
+                placeholder="Enter admin email address"
                 value={adminEmail}
                 onChange={e => setAdminEmail(e.target.value)}
                 className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"

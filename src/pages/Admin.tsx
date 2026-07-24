@@ -92,12 +92,39 @@ export default function Admin() {
   const [resendStatus, setResendStatus] = useState<{ configured: boolean; fromEmail: string } | null>(null);
 
   const handleCopy = (key: string, text: string) => {
-    navigator.clipboard.writeText(text);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch(() => {
+          fallbackCopyTextToClipboard(text);
+        });
+      } else {
+        fallbackCopyTextToClipboard(text);
+      }
+    } catch {
+      fallbackCopyTextToClipboard(text);
+    }
     triggerHaptic();
     setCopiedRecords(prev => ({ ...prev, [key]: true }));
     setTimeout(() => {
       setCopiedRecords(prev => ({ ...prev, [key]: false }));
     }, 2000);
+  };
+
+  const fallbackCopyTextToClipboard = (text: string) => {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    textArea.style.top = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      document.execCommand('copy');
+    } catch (err) {
+      console.error('Fallback copy failed', err);
+    }
+    document.body.removeChild(textArea);
   };
 
   const getStoredPasscode = () => {
@@ -1156,15 +1183,13 @@ export default function Admin() {
                               
                               <button
                                 onClick={() => {
-                                  triggerHaptic();
                                   const dispatchSummary = `ORDER SUMMARY (#${o.id.slice(0, 8)})\nCustomer: ${o.customer_name}\nContact: ${o.customer_contact?.split('[')[0]?.trim()}\nQuantity: ${o.quantity}\nColor: ${displayColor}\nSize: ${displaySize}\nDelivery Address: ${displayAddress}`;
-                                  navigator.clipboard.writeText(dispatchSummary);
-                                  alert('Order details copied to clipboard!');
+                                  handleCopy(`order-${o.id}`, dispatchSummary);
                                 }}
-                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#051650] font-bold text-[10px] rounded-lg border border-slate-200 transition-all cursor-pointer uppercase tracking-wider"
+                                className={`px-2.5 py-1.5 font-bold text-[10px] rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${copiedRecords[`order-${o.id}`] ? 'bg-emerald-100 text-emerald-800 border-emerald-300 font-extrabold' : 'bg-slate-100 hover:bg-slate-200 text-[#051650] border-slate-200'}`}
                                 title="Copy order information for dispatch/courier label"
                               >
-                                📋 Copy
+                                {copiedRecords[`order-${o.id}`] ? '✓ Copied!' : '📋 Copy'}
                               </button>
 
                               {o.status === 'pending' ? (
@@ -1262,14 +1287,12 @@ export default function Admin() {
             <div className="mt-6 pt-4 border-t border-slate-100 flex gap-2">
               <button
                 onClick={() => {
-                  triggerHaptic();
                   const info = `ORDER SUMMARY (#${selectedOrderModal.id.slice(0, 8)})\nCustomer: ${selectedOrderModal.customer_name}\nContact: ${selectedOrderModal.customer_contact?.split('[')[0]?.trim()}\nQuantity: ${selectedOrderModal.quantity}\nColor: ${selectedOrderModal.color || 'Navy Blue'}\nSize: ${selectedOrderModal.size || 'Kids Standard'}\nShipping Address: ${selectedOrderModal.shipping_address || 'Standard Delivery'}`;
-                  navigator.clipboard.writeText(info);
-                  alert('Order information copied to clipboard!');
+                  handleCopy(`modal-${selectedOrderModal.id}`, info);
                 }}
-                className="flex-1 bg-slate-800 hover:bg-slate-900 text-white py-2.5 rounded-xl font-bold uppercase tracking-wider text-xs transition-colors"
+                className={`flex-1 py-2.5 rounded-xl font-bold uppercase tracking-wider text-xs transition-all cursor-pointer ${copiedRecords[`modal-${selectedOrderModal.id}`] ? 'bg-emerald-600 text-white font-extrabold' : 'bg-slate-800 hover:bg-slate-900 text-white'}`}
               >
-                📋 Copy Order Info
+                {copiedRecords[`modal-${selectedOrderModal.id}`] ? '✓ Order Info Copied!' : '📋 Copy Order Info'}
               </button>
 
               {selectedOrderModal.status === 'pending' ? (
