@@ -74,7 +74,7 @@ export default function TapView() {
         }
 
         // Add 3-second timeout so the UI never hangs in sandbox or on poor connections
-        const fetchPromise = supabase.from('tags').select('*').eq('tag_id', tagId);
+        const fetchPromise = supabase.rpc('get_public_tag', { p_tag_id: tagId });
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Database query timeout (3s limit).')), 3000)
         );
@@ -102,9 +102,10 @@ export default function TapView() {
           } else {
             setRecord(null);
           }
-        } else if (data && data.length > 0) {
-          const tag = data[0];
-          if (!tag.owner_id) {
+        } else if (data) {
+          const tag = Array.isArray(data) ? data[0] : data;
+          const isClaimed = tag && (tag.is_claimed !== undefined ? tag.is_claimed : !!tag.owner_id);
+          if (!tag || !isClaimed) {
             // Unclaimed tag
             if (tagId === 'demo01') {
               setRecord(demoData);
