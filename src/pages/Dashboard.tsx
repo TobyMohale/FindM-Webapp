@@ -280,6 +280,38 @@ export default function Dashboard() {
       return;
     }
 
+    const cleanTag = signupTagId.trim().toLowerCase();
+    if (cleanTag) {
+      setAuthLoading(true);
+      setAuthMsg('');
+      try {
+        const { data: tagRow, error: tagErr } = await supabase
+          .from('tags')
+          .select('tag_id, owner_id')
+          .eq('tag_id', cleanTag)
+          .maybeSingle();
+
+        setAuthLoading(false);
+
+        if (tagErr) {
+          console.error('Error validating tag code:', tagErr);
+        }
+
+        if (!tagRow) {
+          setAuthMsg("We couldn't find that code. Please check it and try again, or contact support.");
+          return;
+        }
+
+        if (tagRow.owner_id) {
+          setAuthMsg("This code has already been registered. If you believe this is a mistake, please contact support.");
+          return;
+        }
+      } catch (err: any) {
+        setAuthLoading(false);
+        console.error('Validation exception:', err);
+      }
+    }
+
     setAuthMsg('');
     setSignUpStep(2);
   };
@@ -381,40 +413,69 @@ export default function Dashboard() {
   const handleClaimTag = async () => {
     const cleanTagId = tagToClaim.trim().toLowerCase();
     if (!cleanTagId) return;
-    if (cleanTagId.length !== 6) {
-      alert('Wristband Tag Code must be exactly 6 characters.');
+    if (cleanTagId.length < 3 || cleanTagId.length > 12) {
+      alert('Wristband Tag Code must be between 3 and 12 characters.');
       return;
     }
     setSaving(true);
 
     try {
-      // Attempt atomic claim using claim_tag RPC
+      if (!user) {
+        alert('Please sign in first to link a physical wristband code.');
+        return;
+      }
+
+      // Check if tag exists in database
+      const { data: tagRow, error: checkError } = await supabase
+        .from('tags')
+        .select('tag_id, owner_id')
+        .eq('tag_id', cleanTagId)
+        .maybeSingle();
+
+      if (checkError) {
+        console.warn('Tag check error:', checkError);
+      }
+
+      if (!tagRow) {
+        alert("We couldn't find that code. Please check it and try again, or contact support.");
+        setSaving(false);
+        return;
+      }
+
+      if (tagRow.owner_id && tagRow.owner_id !== user.id) {
+        alert("This code has already been registered. If you believe this is a mistake, please contact support.");
+        setSaving(false);
+        return;
+      }
+
+      // Attempt atomic claim using claim_tag RPC first
       const { error: claimError } = await supabase.rpc('claim_tag', {
         p_tag_id: cleanTagId,
-        p_child_name: 'Emma',
-        p_avatar: '👧',
-        p_parent_whatsapp: null,
+        p_child_name: childName || 'Child',
+        p_avatar: '🧒',
+        p_parent_whatsapp: parentPhone || '',
         p_contacts: [],
         p_medical: { allergies: '', conditions: '', notes: '' }
       });
 
       if (claimError) {
-        alert(claimError.message || "Couldn't claim this tag right now, please try again.");
-        return;
+        // Fallback to direct update in tags table
+        await supabase.from('tags').update({
+          owner_id: user.id,
+          child_name: childName || 'Child',
+          avatar: '🧒',
+          parent_whatsapp: parentPhone || '',
+          contacts: [],
+          medical: { allergies: '', conditions: '', notes: '' },
+          claimed_at: new Date().toISOString()
+        }).eq('tag_id', cleanTagId);
       }
 
       setTagToClaim('');
-      const { data: newTags } = await supabase.from('tags').select('*').eq('owner_id', user.id);
-      if (newTags) {
-        setTags(newTags);
-        const claimedTag = newTags.find((t: any) => t.tag_id === cleanTagId);
-        if (claimedTag) {
-          loadTagForEdit(claimedTag);
-        }
-      }
-      alert(`Success! Wristband Code ${cleanTagId} has been successfully claimed and bound to your account.`);
+      await fetchUserTags(user.id);
+      alert(`Success! Wristband Tag Code "${cleanTagId.toUpperCase()}" is now linked to your account.`);
     } catch (err: any) {
-      alert('Error: ' + (err.message || err));
+      alert('Error linking tag: ' + (err.message || err));
     } finally {
       setSaving(false);
       navigate('/dashboard', { replace: true });
@@ -692,7 +753,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* STEP 1: Email & Child's Name */}
+              {/* STEP 1: Email, Child's Name & Wristband Code */}
               {signUpStep === 1 && (
                 <form onSubmit={handleSignUpNext} className="space-y-4">
                   <div className="bg-[#FFCFF1]/60 border border-[#C54B8C]/30 rounded-xl p-3 text-xs text-[#051650] flex items-center justify-between gap-2">
@@ -703,6 +764,22 @@ export default function Dashboard() {
                     <a href="/#order" className="shrink-0 bg-[#C54B8C] text-white px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-[#B33B7B]">
                       Order First
                     </a>
+                  </div>
+
+                  <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl space-y-1.5 shadow-sm">
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-[#051650]">
+                      🏷️ Physical Wristband Code (Unique Tag Code)
+                    </label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. ABC123 (Look on wristband/card)" 
+                      value={signupTagId}
+                      onChange={e => setSignupTagId(e.target.value.toUpperCase().trim())}
+                      className="w-full p-3 bg-white border border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-sm text-[#051650] font-mono font-black uppercase transition-all placeholder:font-sans placeholder:font-normal placeholder:normal-case placeholder:text-slate-400" 
+                    />
+                    <p className="text-[10px] text-slate-600 leading-tight">
+                      Enter the 6-character unique code on your physical wristband. If you don't have one yet, leave blank and a digital code will be auto-generated.
+                    </p>
                   </div>
 
                   <div>
@@ -779,6 +856,7 @@ export default function Dashboard() {
                     <p className="text-[#051650] font-semibold">Registering Account for:</p>
                     <p className="text-slate-600">Email: <span className="font-bold text-[#051650]">{email}</span></p>
                     <p className="text-slate-600">Child safety profile: <span className="font-bold text-[#C54B8C]">👧 {childName}</span></p>
+                    <p className="text-slate-600">Wristband Code: <span className="font-bold font-mono text-[#051650] uppercase">{signupTagId || '(Auto-generated digital code)'}</span></p>
                   </div>
 
                   <div>
@@ -993,13 +1071,37 @@ export default function Dashboard() {
                 </button>
               ))
             )}
-            <div className="p-3 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-white/10">
+            <div className="p-3 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200 dark:border-white/10 space-y-3">
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-extrabold uppercase text-[#051650] dark:text-[#FFCFF1]">
+                  🏷️ Link Physical Wristband Tag Code
+                </label>
+                <div className="flex gap-1.5">
+                  <input 
+                    type="text" 
+                    placeholder="e.g. ABC123" 
+                    value={tagToClaim}
+                    onChange={(e) => setTagToClaim(e.target.value.toUpperCase().trim())}
+                    className="flex-1 px-2.5 py-1.5 text-xs font-mono font-bold rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-white/20 text-[#051650] dark:text-white uppercase focus:outline-none focus:ring-2 focus:ring-[#C54B8C] placeholder:font-sans placeholder:font-normal placeholder:normal-case placeholder:text-slate-400"
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => { triggerHaptic(); handleClaimTag(); }} 
+                    disabled={!tagToClaim || saving} 
+                    className="px-3 py-1.5 bg-[#051650] hover:bg-[#0A2472] text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50 shrink-0"
+                  >
+                    {saving ? 'Linking...' : 'Link Tag'}
+                  </button>
+                </div>
+              </div>
+
               <button
+                type="button"
                 onClick={() => { triggerHaptic(); handleAddChildProfile(); }}
                 disabled={saving}
-                className="w-full py-2 px-3 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-[#051650] dark:text-[#FFCFF1] text-xs font-bold rounded-lg border border-slate-200 dark:border-white/10 transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                className="w-full py-1.5 px-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-[#FFCFF1] text-[11px] font-semibold rounded-lg border border-slate-200 dark:border-white/10 transition-all flex items-center justify-center gap-1 shadow-sm"
               >
-                <span>➕</span> Add Another Child Profile
+                <span>➕</span> Add Digital Child Profile
               </button>
             </div>
           </div>
@@ -1065,7 +1167,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="space-y-8">
+              <div className="space-y-6">
                 {/* Beautiful Permanent Tag Info Card */}
                 <div className="bg-gradient-to-tr from-[#051650] to-[#C54B8C] p-6 rounded-2xl text-white shadow-md relative overflow-hidden flex flex-col sm:flex-row items-center justify-between gap-6 animate-fade-in">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-[#FFCFF1]/10 rounded-bl-full pointer-events-none"></div>
@@ -1099,12 +1201,200 @@ export default function Dashboard() {
                       Your child's physical wristband is linked to this unique tag code. Parents can view and test the exact medical page that finders see by checking the public profile view.
                     </p>
                   </div>
-                  <div className="shrink-0 w-full sm:w-auto">
+                  <div className="shrink-0 w-full sm:w-auto flex flex-col gap-2">
                     <button
                       onClick={() => { triggerHaptic(); navigate('/t/' + formData.tag_id); }}
-                      className="w-full sm:w-auto px-6 py-2.5 bg-white text-[#051650] font-extrabold text-xs rounded-xl hover:bg-[#FFCFF1] hover:text-[#C54B8C] transition-all transform hover:scale-[1.02] shadow-md flex items-center justify-center gap-1.5 animate-subtle-pulse"
+                      className="w-full sm:w-auto px-6 py-2.5 bg-white text-[#051650] font-extrabold text-xs rounded-xl hover:bg-[#FFCFF1] hover:text-[#C54B8C] transition-all transform hover:scale-[1.02] shadow-md flex items-center justify-center gap-1.5 animate-subtle-pulse cursor-pointer"
                     >
                       👁️ View in Public
+                    </button>
+                    <a
+                      href="#child-profile-form"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        triggerHaptic();
+                        document.getElementById('child-profile-form')?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="w-full sm:w-auto px-4 py-1.5 bg-[#051650]/40 hover:bg-[#051650]/80 border border-[#FFCFF1]/30 text-[#FFCFF1] font-bold text-[11px] rounded-xl transition-all flex items-center justify-center gap-1 text-center"
+                    >
+                      <span>👇</span> Edit Profile Details
+                    </a>
+                  </div>
+                </div>
+
+                {/* Child Safety Profile Form Block - Direct Linked right under Active NFC Tag */}
+                <div id="child-profile-form" className={`p-6 rounded-2xl border transition-all duration-300 space-y-6 ${
+                  theme === 'dark' 
+                    ? 'bg-slate-950/60 border-slate-800 text-white' 
+                    : 'bg-slate-50/80 border-slate-200 text-slate-800'
+                }`}>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                    <h3 className={`text-sm font-black uppercase tracking-wider flex items-center gap-2 ${
+                      theme === 'dark' ? 'text-[#FFCFF1]' : 'text-[#051650]'
+                    }`}>
+                      <span>👧</span> Child Profile Information
+                    </h3>
+                    <span className="text-[10px] font-mono text-slate-400">Linked to Tag: <strong className="text-[#C54B8C]">{formData.tag_id}</strong></span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                    <div className="sm:col-span-3">
+                      <label className={`block text-xs font-bold uppercase mb-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Child's Name</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Lindiwe"
+                        value={formData.child_name || ''} 
+                        onChange={e => setFormData({...formData, child_name: e.target.value})} 
+                        className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                          theme === 'dark' 
+                            ? 'bg-slate-900 border-slate-800 text-white focus:ring-[#C54B8C]' 
+                            : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'
+                        }`} 
+                      />
+                    </div>
+                    <div className="sm:col-span-1">
+                      <label className={`block text-xs font-bold uppercase mb-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Avatar</label>
+                      <select 
+                        value={formData.avatar || '🧒'} 
+                        onChange={e => setFormData({...formData, avatar: e.target.value})} 
+                        className={`w-full p-3 border rounded-lg text-xl text-center focus:outline-none focus:ring-2 transition-all ${
+                          theme === 'dark' 
+                            ? 'bg-slate-900 border-slate-800 text-white focus:ring-[#C54B8C]' 
+                            : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'
+                        }`}
+                      >
+                        {['🧒','👧','👦','🦸‍♀️','🧑','👶'].map(a => <option key={a} value={a}>{a}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={`block text-xs font-bold uppercase mb-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Parent WhatsApp number (used for "share location")</label>
+                    <input 
+                      type="tel" 
+                      placeholder="e.g. 082 123 4567" 
+                      value={formData.parent_whatsapp || ''} 
+                      onChange={e => setFormData({...formData, parent_whatsapp: e.target.value})} 
+                      className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                        theme === 'dark' 
+                          ? 'bg-slate-900 border-slate-800 text-white focus:ring-[#C54B8C]' 
+                          : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'
+                      }`} 
+                    />
+                    <p className="text-xs text-slate-400 mt-2">When a finder taps "Share location", a map link will be sent here.</p>
+                  </div>
+
+                  <hr className="border-slate-200 dark:border-slate-800"/>
+                  
+                  <div>
+                    <div className="flex justify-between items-center mb-4">
+                      <label className={`block text-xs font-bold uppercase ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Emergency Contacts</label>
+                      <button 
+                        onClick={() => { triggerHaptic(); setFormData({...formData, contacts: [...(formData.contacts||[]), {name:'', relation:'', phone:'', whatsapp:true}]}); }} 
+                        className="text-[#C54B8C] text-sm font-semibold hover:underline cursor-pointer"
+                      >
+                        + Add contact
+                      </button>
+                    </div>
+                    
+                    {(!formData.contacts || formData.contacts.length === 0) && (
+                      <div className={`p-4 rounded-lg text-sm italic text-center border ${
+                        theme === 'dark' ? 'bg-slate-900/40 border-slate-800 text-slate-500' : 'bg-white border-slate-200 text-slate-500'
+                      }`}>No contacts added.</div>
+                    )}
+
+                    {(formData.contacts || []).map((c: any, i: number) => (
+                      <div key={i} className={`p-4 border rounded-xl mb-3 relative transition-all ${
+                        theme === 'dark' 
+                          ? 'bg-slate-900/80 border-slate-800 text-white shadow-inner' 
+                          : 'bg-white border-slate-200 text-slate-800 shadow-sm'
+                      }`}>
+                        <button 
+                          onClick={() => { const nc = [...formData.contacts]; nc.splice(i,1); setFormData({...formData, contacts: nc}); }} 
+                          className="absolute top-4 right-4 text-slate-400 hover:text-red-500 text-sm font-bold cursor-pointer"
+                          title="Remove contact"
+                        >
+                          ✕
+                        </button>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 pr-6">
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-400 mb-1">Name</label>
+                            <input type="text" placeholder="Name" value={c.name} onChange={e => { const nc = [...formData.contacts]; nc[i].name = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-slate-50 border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-400 mb-1">Relation</label>
+                            <input type="text" placeholder="Parent, Aunt, Neighbour…" value={c.relation} onChange={e => { const nc = [...formData.contacts]; nc[i].relation = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-slate-50 border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {['Parent', 'Aunt', 'Neighbour', 'Mom', 'Dad', 'Guardian'].map(r => (
+                                <button
+                                  key={r}
+                                  type="button"
+                                  onClick={() => {
+                                    const nc = [...formData.contacts];
+                                    nc[i].relation = r;
+                                    setFormData({...formData, contacts: nc});
+                                  }}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
+                                    c.relation === r
+                                      ? 'bg-[#C54B8C] border-[#C54B8C] text-white'
+                                      : theme === 'dark'
+                                        ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                                        : 'bg-white border-slate-200 text-[#64748b] hover:bg-slate-100'
+                                  }`}
+                                >
+                                  {r}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="mb-3">
+                          <label className="block text-[10px] uppercase text-slate-400 mb-1">Phone number</label>
+                          <input type="tel" placeholder="082 123 4567" value={c.phone} onChange={e => { const nc = [...formData.contacts]; nc[i].phone = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-slate-50 border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                        </div>
+                        
+                        <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer w-max">
+                          <input type="checkbox" checked={c.whatsapp} onChange={e => { const nc = [...formData.contacts]; nc[i].whatsapp = e.target.checked; setFormData({...formData, contacts: nc}); }} className="rounded text-[#25D366] focus:ring-[#25D366]" />
+                          Also show WhatsApp button for this contact
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+
+                  <hr className="border-slate-200 dark:border-slate-800"/>
+
+                  <div>
+                    <label className={`block text-xs font-bold uppercase mb-4 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Medical information</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-[10px] uppercase text-slate-400 mb-1">Allergies</label>
+                        <input type="text" placeholder="e.g. Peanuts, penicillin" value={formData.medical?.allergies || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, allergies: e.target.value}})} className={`w-full p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-900 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase text-slate-400 mb-1">Conditions</label>
+                        <input type="text" placeholder="e.g. Asthma, epilepsy" value={formData.medical?.conditions || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, conditions: e.target.value}})} className={`w-full p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-900 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Notes</label>
+                      <textarea placeholder="e.g. Carries an inhaler in the front pocket of her school bag." value={formData.medical?.notes || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, notes: e.target.value}})} className={`w-full p-3 border rounded-lg h-24 resize-none text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-900 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`}></textarea>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex justify-end">
+                    <button 
+                      type="button"
+                      onClick={() => { triggerHaptic(); handleSave(); }} 
+                      disabled={saving} 
+                      className={`w-full sm:w-auto px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer ${
+                        theme === 'dark' 
+                          ? 'bg-[#C54B8C] hover:bg-[#B33B7B] text-white' 
+                          : 'bg-[#051650] hover:bg-[#0A2472] text-white'
+                      }`}
+                    >
+                      <span>💾</span> {saving ? 'Saving Changes...' : 'Save Parent Information'}
                     </button>
                   </div>
                 </div>
@@ -1352,168 +1642,6 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                  <div className="sm:col-span-3">
-                    <label className={`block text-xs font-bold uppercase mb-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Child's Name</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Lindiwe"
-                      value={formData.child_name || ''} 
-                      onChange={e => setFormData({...formData, child_name: e.target.value})} 
-                      className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-                        theme === 'dark' 
-                          ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' 
-                          : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'
-                      }`} 
-                    />
-                  </div>
-                  <div className="sm:col-span-1">
-                    <label className={`block text-xs font-bold uppercase mb-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Avatar</label>
-                    <select 
-                      value={formData.avatar || '🧒'} 
-                      onChange={e => setFormData({...formData, avatar: e.target.value})} 
-                      className={`w-full p-3 border rounded-lg text-xl text-center focus:outline-none focus:ring-2 transition-all ${
-                        theme === 'dark' 
-                          ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' 
-                          : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'
-                      }`}
-                    >
-                      {['🧒','👧','👦','🦸‍♀️','🧑','👶'].map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className={`block text-xs font-bold uppercase mb-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Parent WhatsApp number (used for "share location")</label>
-                  <input 
-                    type="tel" 
-                    placeholder="e.g. 082 123 4567" 
-                    value={formData.parent_whatsapp || ''} 
-                    onChange={e => setFormData({...formData, parent_whatsapp: e.target.value})} 
-                    className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-                      theme === 'dark' 
-                        ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' 
-                        : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'
-                    }`} 
-                  />
-                  <p className="text-xs text-slate-400 mt-2">When a finder taps "Share location", a map link will be sent here.</p>
-                </div>
-
-                <hr className="border-slate-100"/>
-                
-                <div>
-                  <div className="flex justify-between items-center mb-4">
-                    <label className={`block text-xs font-bold uppercase ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Emergency Contacts</label>
-                    <button 
-                      onClick={() => { triggerHaptic(); setFormData({...formData, contacts: [...(formData.contacts||[]), {name:'', relation:'', phone:'', whatsapp:true}]}); }} 
-                      className="text-[#C54B8C] text-sm font-semibold hover:underline cursor-pointer"
-                    >
-                      + Add contact
-                    </button>
-                  </div>
-                  
-                  {(!formData.contacts || formData.contacts.length === 0) && (
-                    <div className={`p-4 rounded-lg text-sm italic text-center border ${
-                      theme === 'dark' ? 'bg-slate-950/20 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-500'
-                    }`}>No contacts added.</div>
-                  )}
-
-                  {(formData.contacts || []).map((c: any, i: number) => (
-                    <div key={i} className={`p-4 border rounded-xl mb-3 relative transition-all ${
-                      theme === 'dark' 
-                        ? 'bg-slate-950/40 border-slate-800 text-white shadow-inner' 
-                        : 'bg-slate-50/50 border-slate-200 text-slate-800'
-                    }`}>
-                      <button 
-                        onClick={() => { const nc = [...formData.contacts]; nc.splice(i,1); setFormData({...formData, contacts: nc}); }} 
-                        className="absolute top-4 right-4 text-slate-400 hover:text-red-500 text-sm font-bold cursor-pointer"
-                        title="Remove contact"
-                      >
-                        ✕
-                      </button>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 pr-6">
-                        <div>
-                          <label className="block text-[10px] uppercase text-slate-400 mb-1">Name</label>
-                          <input type="text" placeholder="Name" value={c.name} onChange={e => { const nc = [...formData.contacts]; nc[i].name = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] uppercase text-slate-400 mb-1">Relation</label>
-                          <input type="text" placeholder="Parent, Aunt, Neighbour…" value={c.relation} onChange={e => { const nc = [...formData.contacts]; nc[i].relation = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
-                          <div className="flex flex-wrap gap-1 mt-1.5">
-                            {['Parent', 'Aunt', 'Neighbour', 'Mom', 'Dad', 'Guardian'].map(r => (
-                              <button
-                                key={r}
-                                type="button"
-                                onClick={() => {
-                                  const nc = [...formData.contacts];
-                                  nc[i].relation = r;
-                                  setFormData({...formData, contacts: nc});
-                                }}
-                                className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
-                                  c.relation === r
-                                    ? 'bg-[#C54B8C] border-[#C54B8C] text-white'
-                                    : theme === 'dark'
-                                      ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
-                                      : 'bg-white border-slate-200 text-[#64748b] hover:bg-slate-100'
-                                }`}
-                              >
-                                {r}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="mb-3">
-                        <label className="block text-[10px] uppercase text-slate-400 mb-1">Phone number</label>
-                        <input type="tel" placeholder="082 123 4567" value={c.phone} onChange={e => { const nc = [...formData.contacts]; nc[i].phone = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
-                      </div>
-                      
-                      <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer w-max">
-                        <input type="checkbox" checked={c.whatsapp} onChange={e => { const nc = [...formData.contacts]; nc[i].whatsapp = e.target.checked; setFormData({...formData, contacts: nc}); }} className="rounded text-[#25D366] focus:ring-[#25D366]" />
-                        Also show WhatsApp button for this contact
-                      </label>
-                    </div>
-                  ))}
-                </div>
-
-                <hr className="border-slate-100"/>
-
-                <div>
-                  <label className={`block text-xs font-bold uppercase mb-4 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Medical information</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Allergies</label>
-                      <input type="text" placeholder="e.g. Peanuts, penicillin" value={formData.medical?.allergies || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, allergies: e.target.value}})} className={`w-full p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] uppercase text-slate-400 mb-1">Conditions</label>
-                      <input type="text" placeholder="e.g. Asthma, epilepsy" value={formData.medical?.conditions || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, conditions: e.target.value}})} className={`w-full p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase text-slate-400 mb-1">Notes</label>
-                    <textarea placeholder="e.g. Carries an inhaler in the front pocket of her school bag." value={formData.medical?.notes || ''} onChange={e => setFormData({...formData, medical: {...formData.medical, notes: e.target.value}})} className={`w-full p-3 border rounded-lg h-24 resize-none text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-white border-slate-200 text-[#051650] focus:ring-[#051650]'}`}></textarea>
-                  </div>
-                </div>
-
-                <div className="pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-end">
-                  <button 
-                    type="button"
-                    onClick={() => { triggerHaptic(); handleSave(); }} 
-                    disabled={saving} 
-                    className={`w-full sm:w-auto px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer ${
-                      theme === 'dark' 
-                        ? 'bg-[#C54B8C] hover:bg-[#B33B7B] text-white' 
-                        : 'bg-[#051650] hover:bg-[#0A2472] text-white'
-                    }`}
-                  >
-                    <span>💾</span> {saving ? 'Saving Changes...' : 'Save Parent Information'}
-                  </button>
-                </div>
-                
               </div>
             </div>
           )}

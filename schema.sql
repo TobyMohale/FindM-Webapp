@@ -155,8 +155,8 @@ begin
                 new_id := new_id || substr(chars, floor(random() * length(chars) + 1)::integer, 1);
             end loop;
             
-            -- Check for collision, if none, break inner loop to insert
-            if not exists (select 1 from public.tags where tag_id = new_id) and not (new_id = any(generated_ids)) then
+            -- Check for collision against all existing codes in tags table and current batch
+            if not exists (select 1 from public.tags where lower(tag_id) = lower(new_id)) and not (new_id = any(generated_ids)) then
                 exit;
             end if;
         end loop;
@@ -170,7 +170,67 @@ end;
 $$ language plpgsql security definer;
 
 -- ==========================================
--- 7. PUBLIC SCAN STATISTICS INCREMENT RPC
+-- 7. ATOMIC TAG CLAIM RPC FUNCTION
+-- ==========================================
+create or replace function public.claim_tag(
+    p_tag_id text,
+    p_child_name text,
+    p_avatar text default '🧒',
+    p_parent_whatsapp text default '',
+    p_contacts jsonb default '[]'::jsonb,
+    p_medical jsonb default '{"allergies": "", "conditions": "", "notes": ""}'::jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+    v_tag record;
+    v_user_id uuid;
+    clean_code text;
+begin
+    v_user_id := auth.uid();
+    if v_user_id is null then
+        raise exception 'User must be authenticated to claim a tag.';
+    end if;
+
+    clean_code := lower(trim(p_tag_id));
+
+    -- Check if tag exists
+    select * into v_tag from public.tags where lower(tag_id) = clean_code;
+    
+    if not found then
+        -- Create new tag if it's a new digital or auto-generated tag code
+        insert into public.tags (
+            tag_id, owner_id, child_name, avatar, parent_whatsapp, contacts, medical, claimed_at
+        ) values (
+            clean_code, v_user_id, p_child_name, p_avatar, p_parent_whatsapp, p_contacts, p_medical, timezone('utc'::text, now())
+        );
+        return jsonb_build_object('success', true, 'message', 'Tag created and claimed');
+    end if;
+
+    -- Check if tag is already claimed by someone else
+    if v_tag.owner_id is not null and v_tag.owner_id != v_user_id then
+        raise exception 'This code has already been registered. If you believe this is a mistake, please contact support.';
+    end if;
+
+    -- Atomic update claiming tag
+    update public.tags
+    set owner_id = v_user_id,
+        child_name = p_child_name,
+        avatar = p_avatar,
+        parent_whatsapp = p_parent_whatsapp,
+        contacts = p_contacts,
+        medical = p_medical,
+        claimed_at = coalesce(v_tag.claimed_at, timezone('utc'::text, now()))
+    where lower(tag_id) = clean_code;
+
+    return jsonb_build_object('success', true, 'message', 'Tag successfully claimed');
+end;
+$$;
+
+-- ==========================================
+-- 8. PUBLIC SCAN STATISTICS INCREMENT RPC
 -- ==========================================
 -- Security Definer function to safely increment scan count from the public Tap page without exposing general update permissions
 create or replace function public.increment_tag_scan(target_tag_id text)

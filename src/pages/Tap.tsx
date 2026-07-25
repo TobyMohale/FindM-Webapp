@@ -438,45 +438,11 @@ export default function TapView() {
           )}
 
           <div className="flex flex-col gap-2.5">
-            {/* Quick action to auto-create and claim this tag if they want to test */}
             <button
-              onClick={async () => {
-                setLoading(true);
-                try {
-                  // Attempt to insert/claim this tag in mock storage or database if allowed
-                  const { error } = await supabase.from('tags').insert({
-                    tag_id: tagId,
-                    owner_id: null, // unclaimed
-                    child_name: 'New Child Profile',
-                    avatar: '🧒',
-                    contacts: [],
-                    medical: { allergies: '', conditions: '', notes: '' }
-                  });
-                  if (!error) {
-                    // Navigate to claim view
-                    navigate(`/claim/${tagId}`);
-                  } else {
-                    alert('Could not auto-create tag: ' + error.message);
-                  }
-                } catch (e: any) {
-                  alert('Error auto-creating tag: ' + e.message);
-                } finally {
-                  setLoading(false);
-                }
-              }}
-              className="w-full py-3 px-4 bg-[#051650] hover:bg-[#0A2472] text-white font-bold rounded-xl text-xs transition-all shadow-sm flex items-center justify-center gap-2"
+              onClick={() => navigate(`/claim/${tagId}`)}
+              className="w-full py-3.5 px-4 bg-[#C54B8C] hover:bg-[#B33B7B] text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-wider"
             >
-              <span>✨</span> Create & Register Tag "{tagId}" Instantly
-            </button>
-
-            <button
-              onClick={() => {
-                localStorage.setItem('findme_force_mock', 'true');
-                window.location.reload();
-              }}
-              className="w-full py-3 px-4 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2"
-            >
-              <span>⚡</span> Switch to Demo Mock Mode (Bypass Supabase)
+              <span>🏷️</span> Register & Set Up Wristband "{tagId}"
             </button>
 
             <div className="grid grid-cols-2 gap-2 mt-2">
@@ -490,7 +456,7 @@ export default function TapView() {
                 onClick={() => navigate('/dashboard')}
                 className="py-2.5 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[#051650] font-bold rounded-lg text-xs transition-all"
               >
-                ⚙️ Parent Dashboard
+                ⚙️ Parent Portal
               </button>
             </div>
           </div>

@@ -395,24 +395,34 @@ export default function Admin() {
         // Fallback: Generate tags directly via secure client-side insertion if RPC not found or fails
         console.warn('RPC generate_tag_batch not found or failed. Running high-fidelity client fallback batch generator...');
         const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
-        const newTags: any[] = [];
         
-        for (let i = 0; i < batchSize; i++) {
+        // Fetch existing tag IDs to guarantee zero collision across all production runs
+        const { data: existingRows } = await supabase.from('tags').select('tag_id');
+        const existingSet = new Set((existingRows || []).map((r: any) => (r.tag_id || '').toLowerCase()));
+        
+        const newTags: any[] = [];
+        const batchSet = new Set<string>();
+        
+        while (newTags.length < batchSize) {
           let uniqueId = '';
           for (let j = 0; j < 6; j++) {
             uniqueId += chars[Math.floor(Math.random() * chars.length)];
           }
-          newTags.push({
-            tag_id: uniqueId,
-            owner_id: null,
-            child_name: '',
-            avatar: '👧',
-            parent_whatsapp: '',
-            contacts: [],
-            medical: { allergies: '', conditions: '', notes: '' },
-            custom_label: '',
-            scan_count: 0
-          });
+          
+          if (!existingSet.has(uniqueId) && !batchSet.has(uniqueId)) {
+            batchSet.add(uniqueId);
+            newTags.push({
+              tag_id: uniqueId,
+              owner_id: null,
+              child_name: '',
+              avatar: '👧',
+              parent_whatsapp: '',
+              contacts: [],
+              medical: { allergies: '', conditions: '', notes: '' },
+              custom_label: '',
+              scan_count: 0
+            });
+          }
         }
         
         // Batch insert tags
@@ -434,11 +444,17 @@ export default function Admin() {
 
   const handleExportCSV = () => {
     if (generatedBatch.length === 0) return;
-    const csvContent = "data:text/csv;charset=utf-8,Tag_Code\n" 
-      + generatedBatch.map(t => t.tag_id).join("\n");
-    const encodedUri = encodeURI(csvContent);
+    const baseUrl = 'https://lotap.co.za';
+    const rows = ['code,full_url'];
+    generatedBatch.forEach(t => {
+      const code = t.tag_id || t.code;
+      if (code) {
+        rows.push(`${code},${baseUrl}/t/${code}`);
+      }
+    });
+    const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent(rows.join("\n"));
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", csvContent);
     link.setAttribute("download", `lotap_tag_codes_batch_${new Date().getTime()}.csv`);
     document.body.appendChild(link);
     link.click();
