@@ -55,6 +55,8 @@ export default function TapView() {
       setErrorMsg(null);
       setIsDemoFallback(false);
       
+      const cleanTagId = tagId.trim().toLowerCase();
+
       const demoData = {
         tag_id: 'demo01',
         owner_id: 'mock-user-1',
@@ -68,110 +70,105 @@ export default function TapView() {
       };
 
       try {
-        // Safe check for supabase client
         if (!supabase || typeof supabase.from !== 'function') {
           throw new Error('Database client not fully initialized.');
         }
 
-        // Add 3-second timeout so the UI never hangs in sandbox or on poor connections
-        const fetchPromise = supabase.rpc('get_public_tag', { p_tag_id: tagId });
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Database query timeout (3s limit).')), 3000)
-        );
+        let tagData: any = null;
+        let isClaimed = false;
 
-        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
-        
-        if (error) {
-          console.error("Supabase fetch error:", error);
-          
-          if (error?.code === 'PGRST205' || error?.message?.includes('schema')) {
-            setErrorMsg("Database tables are missing. Please run the schema.sql file in your Supabase SQL Editor to initialize the project.");
-            setRecord(null);
-            return;
-          } else {
-            setErrorMsg(error.message);
+        // 1. First attempt: Call get_public_tag RPC
+        try {
+          const fetchPromise = supabase.rpc('get_public_tag', { p_tag_id: cleanTagId });
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('RPC query timeout (3s limit).')), 3000)
+          );
+          const { data: rpcData, error: rpcErr } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+
+          if (!rpcErr && rpcData) {
+            tagData = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+            isClaimed = tagData && (tagData.is_claimed !== undefined ? tagData.is_claimed : !!tagData.owner_id);
           }
-          
-          if (tagId === 'demo01') {
-            setRecord(demoData);
-            setIsDemoFallback(true);
-            setParentProfile({
-              full_name: 'Thandeka Dlamini',
-              email: 'parent@example.com'
-            });
-          } else {
-            setRecord(null);
+        } catch (e) {
+          console.warn('RPC lookup failed or timed out, falling back to direct table lookup:', e);
+        }
+
+        // 2. Fallback attempt if RPC returned nothing or errored: Direct table query
+        if (!tagData) {
+          try {
+            const { data: directData, error: directErr } = await supabase
+              .from('tags')
+              .select('*')
+              .ilike('tag_id', cleanTagId)
+              .maybeSingle();
+
+            if (!directErr && directData) {
+              tagData = directData;
+              isClaimed = !!directData.owner_id;
+            }
+          } catch (e) {
+            console.warn('Direct table lookup failed:', e);
           }
-        } else if (data) {
-          const tag = Array.isArray(data) ? data[0] : data;
-          const isClaimed = tag && (tag.is_claimed !== undefined ? tag.is_claimed : !!tag.owner_id);
-          if (!tag || !isClaimed) {
-            // Unclaimed tag
-            if (tagId === 'demo01') {
+        }
+
+        // 3. Process the tag result
+        if (tagData) {
+          if (!isClaimed) {
+            // Unclaimed tag code -> guide parent directly to claim/registration page
+            if (cleanTagId === 'demo01') {
               setRecord(demoData);
               setIsDemoFallback(true);
-              setParentProfile({
-                full_name: 'Thandeka Dlamini',
-                email: 'parent@example.com'
-              });
+              setParentProfile({ full_name: 'Thandeka Dlamini', email: 'parent@example.com' });
             } else {
-              navigate(`/claim/${tagId}`, { replace: true });
+              navigate(`/claim/${cleanTagId}`, { replace: true });
+              return;
             }
           } else {
-            // Increment scan count and update last scanned timestamp via secure RPC
-            const newScanCount = (tag.scan_count || 0) + 1;
+            // Claimed tag -> display emergency safety card
+            const newScanCount = (tagData.scan_count || 0) + 1;
             const now = new Date().toISOString();
-            
-            supabase.rpc('increment_tag_scan', { target_tag_id: tag.tag_id }).then(({ error }) => {
+
+            supabase.rpc('increment_tag_scan', { target_tag_id: tagData.tag_id }).then(({ error }) => {
               if (error) console.error("Error incrementing scan count:", error);
             });
 
             setRecord({
-              ...tag,
+              ...tagData,
               scan_count: newScanCount,
               last_scanned_at: now
             });
 
-            // Trigger Resend notification in the background
+            // Trigger Resend scan alert notification
             fetch('/api/notify/scan', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                tag_id: tag.tag_id,
-                child_name: tag.child_name,
+                tag_id: tagData.tag_id,
+                child_name: tagData.child_name,
                 scan_count: newScanCount,
                 timestamp: now
               })
-            }).then(res => res.json())
-              .then(resData => console.log('Resend scan alert response:', resData))
-              .catch(err => console.error('Resend scan alert error:', err));
+            }).catch(err => console.error('Resend scan alert error:', err));
           }
         } else {
-          // No tag found in database
-          if (tagId === 'demo01') {
+          // Tag code not found in DB -> guide parent directly to claim/registration page for setup
+          if (cleanTagId === 'demo01') {
             setRecord(demoData);
             setIsDemoFallback(true);
-            setParentProfile({
-              full_name: 'Thandeka Dlamini',
-              email: 'parent@example.com'
-            });
+            setParentProfile({ full_name: 'Thandeka Dlamini', email: 'parent@example.com' });
           } else {
-            setRecord(null);
+            navigate(`/claim/${cleanTagId}`, { replace: true });
+            return;
           }
         }
       } catch (err: any) {
         console.error("Catch error in fetchTag:", err);
-        setErrorMsg(err.message || 'Database connection error');
-        if (tagId === 'demo01') {
-          setRecord(demoData);
-          setIsDemoFallback(true);
-          setParentProfile({
-            full_name: 'Thandeka Dlamini',
-            email: 'parent@example.com'
-          });
-        } else {
-          setRecord(null);
+        if (tagId !== 'demo01') {
+          navigate(`/claim/${tagId}`, { replace: true });
+          return;
         }
+        setRecord(demoData);
+        setIsDemoFallback(true);
       } finally {
         setLoading(false);
       }

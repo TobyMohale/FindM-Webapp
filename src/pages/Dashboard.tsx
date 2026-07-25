@@ -70,6 +70,13 @@ export default function Dashboard() {
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Add Child Profile Modal State
+  const [showAddChildModal, setShowAddChildModal] = useState(false);
+  const [newChildTagCode, setNewChildTagCode] = useState('');
+  const [newChildName, setNewChildName] = useState('');
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalError, setModalError] = useState('');
+
   // Form State
   const [formData, setFormData] = useState<any>(null);
 
@@ -156,6 +163,7 @@ export default function Dashboard() {
       if (!activeTagId) {
         loadTagForEdit(data[0]);
       }
+      return data;
     } else {
       // Auto-create a child tag profile for the parent
       const newTagId = 'lt' + Math.floor(100000 + Math.random() * 900000).toString();
@@ -174,30 +182,120 @@ export default function Dashboard() {
       if (updatedData && updatedData.length > 0) {
         setTags(updatedData);
         loadTagForEdit(updatedData[0]);
+        return updatedData;
       } else {
         setTags([newProfile]);
         loadTagForEdit(newProfile);
+        return [newProfile];
       }
     }
   };
 
-  const handleAddChildProfile = async () => {
-    if (!user) return;
-    setSaving(true);
-    const newTagId = 'lt' + Math.floor(100000 + Math.random() * 900000).toString();
-    const newProfile = {
-      tag_id: newTagId,
-      owner_id: user.id,
-      child_name: 'Child Profile',
-      avatar: '🧒',
-      parent_whatsapp: parentPhone || '',
-      contacts: [],
-      medical: { allergies: '', conditions: '', notes: '' },
-      claimed_at: new Date().toISOString()
-    };
-    await supabase.from('tags').upsert([newProfile]);
-    await fetchUserTags(user.id);
-    setSaving(false);
+  const handleAddChildWithCode = async () => {
+    const cleanTagId = newChildTagCode.trim().toLowerCase();
+    if (!cleanTagId) return;
+    
+    if (cleanTagId.length < 3 || cleanTagId.length > 12) {
+      setModalError('Wristband Tag Code must be between 3 and 12 characters.');
+      return;
+    }
+
+    setModalLoading(true);
+    setModalError('');
+
+    try {
+      if (!user) {
+        setModalError('Please sign in first.');
+        setModalLoading(false);
+        return;
+      }
+
+      // 1. Check if tag exists in database
+      const { data: existingTag, error: checkErr } = await supabase
+        .from('tags')
+        .select('*')
+        .ilike('tag_id', cleanTagId)
+        .maybeSingle();
+
+      if (checkErr) {
+        console.warn('Tag query error:', checkErr);
+      }
+
+      if (existingTag) {
+        if (existingTag.owner_id && existingTag.owner_id !== user.id) {
+          setModalError('This wristband code is already registered to another account.');
+          setModalLoading(false);
+          return;
+        }
+
+        // Claim existing tag
+        const { error: claimErr } = await supabase.rpc('claim_tag', {
+          p_tag_id: existingTag.tag_id,
+          p_child_name: newChildName || existingTag.child_name || 'Child Profile',
+          p_avatar: existingTag.avatar || '🧒',
+          p_parent_whatsapp: parentPhone || existingTag.parent_whatsapp || '',
+          p_contacts: existingTag.contacts || [],
+          p_medical: existingTag.medical || { allergies: '', conditions: '', notes: '' }
+        });
+
+        if (claimErr) {
+          await supabase.from('tags').update({
+            owner_id: user.id,
+            child_name: newChildName || existingTag.child_name || 'Child Profile',
+            parent_whatsapp: parentPhone || existingTag.parent_whatsapp || '',
+            claimed_at: new Date().toISOString()
+          }).eq('tag_id', existingTag.tag_id);
+        }
+      } else {
+        // Tag does not exist in database yet -> Create new tag record linked to user
+        const newProfile = {
+          tag_id: cleanTagId,
+          owner_id: user.id,
+          child_name: newChildName || 'Child Profile',
+          avatar: '🧒',
+          parent_whatsapp: parentPhone || '',
+          contacts: [],
+          medical: { allergies: '', conditions: '', notes: '' },
+          claimed_at: new Date().toISOString()
+        };
+
+        const { error: insertErr } = await supabase.from('tags').insert([newProfile]);
+        if (insertErr) {
+          throw new Error('Failed to create tag profile: ' + insertErr.message);
+        }
+      }
+
+      // Trigger signup/claim notification email
+      if (user?.email) {
+        fetch('/api/notify/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parent_email: user.email,
+            parent_phone: parentPhone || '',
+            child_name: newChildName || 'Child Profile',
+            tag_id: cleanTagId.toUpperCase()
+          })
+        }).catch(err => console.error("Signup email error:", err));
+      }
+
+      const updatedTags = await fetchUserTags(user.id);
+      if (updatedTags && updatedTags.length > 0) {
+        const addedTag = updatedTags.find((t: any) => t.tag_id.toLowerCase() === cleanTagId);
+        if (addedTag) {
+          loadTagForEdit(addedTag);
+        }
+      }
+
+      setShowAddChildModal(false);
+      setNewChildTagCode('');
+      setNewChildName('');
+      setToastMessage(`Wristband code "${cleanTagId.toUpperCase()}" successfully added!`);
+    } catch (err: any) {
+      setModalError(err.message || 'Error adding child profile.');
+    } finally {
+      setModalLoading(false);
+    }
   };
 
   const loadTagForEdit = (tag: any) => {
@@ -1090,35 +1188,18 @@ export default function Dashboard() {
                 </button>
               ))
             )}
-            <div className="p-3 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200 dark:border-white/10 space-y-3">
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-extrabold uppercase text-[#051650] dark:text-[#FFCFF1]">
-                  🏷️ Link Physical Wristband Tag Code
-                </label>
-                <div className="flex gap-1.5">
-                  <input 
-                    type="text" 
-                    placeholder="e.g. ABC123" 
-                    value={tagToClaim}
-                    onChange={(e) => setTagToClaim(e.target.value.toUpperCase().trim())}
-                    className="flex-1 px-2.5 py-1.5 text-xs font-mono font-bold rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-white/20 text-[#051650] dark:text-white uppercase focus:outline-none focus:ring-2 focus:ring-[#C54B8C] placeholder:font-sans placeholder:font-normal placeholder:normal-case placeholder:text-slate-400"
-                  />
-                  <button 
-                    type="button"
-                    onClick={() => { triggerHaptic(); handleClaimTag(); }} 
-                    disabled={!tagToClaim || saving} 
-                    className="px-3 py-1.5 bg-[#051650] hover:bg-[#0A2472] text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50 shrink-0"
-                  >
-                    {saving ? 'Linking...' : 'Link Tag'}
-                  </button>
-                </div>
-              </div>
-
+            <div className="p-3 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200 dark:border-white/10">
               <button
                 type="button"
-                onClick={() => { triggerHaptic(); handleAddChildProfile(); }}
+                onClick={() => {
+                  triggerHaptic();
+                  setNewChildTagCode('');
+                  setNewChildName('');
+                  setModalError('');
+                  setShowAddChildModal(true);
+                }}
                 disabled={saving}
-                className="w-full py-1.5 px-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-[#FFCFF1] text-[11px] font-semibold rounded-lg border border-slate-200 dark:border-white/10 transition-all flex items-center justify-center gap-1 shadow-sm"
+                className="w-full py-2.5 px-3 bg-[#051650] hover:bg-[#0A2472] dark:bg-[#C54B8C] dark:hover:bg-[#B33B7B] text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm"
               >
                 <span>➕</span> Add Digital Child Profile
               </button>
@@ -1645,7 +1726,7 @@ export default function Dashboard() {
                         <span className="font-extrabold text-[#C54B8C] bg-[#FFCFF1]/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
                         <div>
                           <p className="font-bold leading-none">Claim Your Code</p>
-                          <p className="text-slate-400 mt-0.5">Under the "Your Tags" list on the left, click "Claim a new tag" and enter this unique code to securely bind it to your profile.</p>
+                          <p className="text-slate-400 mt-0.5">Under the "Your Tags" list on the left, click "Add Digital Child Profile" and enter this unique code to securely bind it to your account.</p>
                         </div>
                       </div>
 
@@ -1672,6 +1753,85 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Add Digital Child Profile Modal */}
+      {showAddChildModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className={`max-w-md w-full p-6 rounded-2xl shadow-2xl border ${
+            theme === 'dark' ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-[#051650]'
+          }`}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-black uppercase tracking-tight flex items-center gap-2">
+                <span>👶</span> Add Digital Child Profile
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setShowAddChildModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white font-bold text-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 leading-relaxed font-medium">
+              Enter the Tag Code for your child's physical wristband or digital profile to link it to your parent dashboard.
+            </p>
+
+            <form onSubmit={(e) => { e.preventDefault(); handleAddChildWithCode(); }} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-extrabold uppercase tracking-wider mb-1.5 text-slate-500 dark:text-slate-400">
+                  Wristband Tag Code *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. ABC123"
+                  value={newChildTagCode}
+                  onChange={(e) => setNewChildTagCode(e.target.value.toUpperCase().trim())}
+                  className="w-full px-3.5 py-2.5 text-sm font-mono font-bold rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-white/20 text-[#051650] dark:text-white uppercase focus:outline-none focus:ring-2 focus:ring-[#C54B8C] placeholder:font-sans placeholder:font-normal placeholder:normal-case placeholder:text-slate-400"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-extrabold uppercase tracking-wider mb-1.5 text-slate-500 dark:text-slate-400">
+                  Child's Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Emma"
+                  value={newChildName}
+                  onChange={(e) => setNewChildName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-sm font-semibold rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-white/20 text-[#051650] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#C54B8C] placeholder:font-normal placeholder:text-slate-400"
+                />
+              </div>
+
+              {modalError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl font-semibold">
+                  {modalError}
+                </div>
+              )}
+
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddChildModal(false)}
+                  className="flex-1 py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newChildTagCode || modalLoading}
+                  className="flex-1 py-2.5 px-4 bg-[#051650] hover:bg-[#0A2472] dark:bg-[#C54B8C] dark:hover:bg-[#B33B7B] text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-md shadow-[#051650]/20"
+                >
+                  {modalLoading ? 'Adding...' : 'Add Child Profile'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Floating Toast Notification */}
       {toastMessage && (

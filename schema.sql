@@ -229,6 +229,9 @@ begin
 end;
 $$;
 
+-- Ensure emergency_mode column exists on tags
+alter table public.tags add column if not exists emergency_mode boolean default false not null;
+
 -- ==========================================
 -- 8. PUBLIC SCAN STATISTICS INCREMENT RPC
 -- ==========================================
@@ -245,3 +248,37 @@ begin
     where tag_id = target_tag_id;
 end;
 $$;
+
+-- ==========================================
+-- 9. PUBLIC GET TAG RPC FUNCTION
+-- ==========================================
+create or replace function public.get_public_tag(p_tag_id text)
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+    v_tag record;
+begin
+    select * into v_tag 
+    from public.tags 
+    where lower(tag_id) = lower(trim(p_tag_id));
+
+    if not found then
+        return null;
+    end if;
+
+    return jsonb_build_object(
+        'tag_id', v_tag.tag_id,
+        'child_name', coalesce(v_tag.child_name, ''),
+        'avatar', coalesce(v_tag.avatar, '🧒'),
+        'parent_whatsapp', coalesce(v_tag.parent_whatsapp, ''),
+        'contacts', coalesce(v_tag.contacts, '[]'::jsonb),
+        'medical', coalesce(v_tag.medical, '{"allergies": "", "conditions": "", "notes": ""}'::jsonb),
+        'emergency_mode', coalesce(v_tag.emergency_mode, false),
+        'is_claimed', (v_tag.owner_id is not null),
+        'scan_count', coalesce(v_tag.scan_count, 0)
+    );
+end;
+$$;
+
