@@ -380,60 +380,19 @@ export default function Admin() {
     setLoading(true);
     triggerHaptic();
     try {
-      // First attempt using Supabase RPC batch generator
       const { data, error } = await supabase.rpc('generate_tag_batch', { batch_size: batchSize });
-      
-      if (data && !error) {
-        const formatted = data.map((row: any) => {
-          if (typeof row === 'string') {
-            return { tag_id: row };
-          }
-          return { tag_id: row.generated_id || row.tag_id };
-        });
-        setGeneratedBatch(formatted);
-      } else {
-        // Fallback: Generate tags directly via secure client-side insertion if RPC not found or fails
-        console.warn('RPC generate_tag_batch not found or failed. Running high-fidelity client fallback batch generator...');
-        const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
-        
-        // Fetch existing tag IDs to guarantee zero collision across all production runs
-        const { data: existingRows } = await supabase.from('tags').select('tag_id');
-        const existingSet = new Set((existingRows || []).map((r: any) => (r.tag_id || '').toLowerCase()));
-        
-        const newTags: any[] = [];
-        const batchSet = new Set<string>();
-        
-        while (newTags.length < batchSize) {
-          let uniqueId = '';
-          for (let j = 0; j < 6; j++) {
-            uniqueId += chars[Math.floor(Math.random() * chars.length)];
-          }
-          
-          if (!existingSet.has(uniqueId) && !batchSet.has(uniqueId)) {
-            batchSet.add(uniqueId);
-            newTags.push({
-              tag_id: uniqueId,
-              owner_id: null,
-              child_name: '',
-              avatar: '👧',
-              parent_whatsapp: '',
-              contacts: [],
-              medical: { allergies: '', conditions: '', notes: '' },
-              custom_label: '',
-              scan_count: 0
-            });
-          }
-        }
-        
-        // Batch insert tags
-        const { error: insertError } = await supabase.from('tags').insert(newTags);
-        if (insertError) {
-          throw new Error('Fallback tag generation failed: ' + insertError.message);
-        }
-        
-        setGeneratedBatch(newTags);
+      if (error || !data) {
+        throw new Error(error?.message || 'Tag batch generation failed. Please try again.');
       }
-      
+
+      const formatted = data.map((row: any) => {
+        if (typeof row === 'string') {
+          return { tag_id: row };
+        }
+        return { tag_id: row.generated_id || row.tag_id };
+      });
+      setGeneratedBatch(formatted);
+
       await fetchTagsList();
     } catch (err: any) {
       alert('Error generating tag codes: ' + err.message);
