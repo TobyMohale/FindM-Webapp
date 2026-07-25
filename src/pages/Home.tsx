@@ -17,11 +17,12 @@ export default function Home() {
   }, []);
   const [formData, setFormData] = useState({
     name: '',
+    email: '',
     number: '',
     bands: '1',
     address: '',
     color: 'Navy Blue',
-    size: 'Kids Standard (Medium)'
+    size: 'Kids Small (Toddler 2-5 yrs)'
   });
   const [selectedColor, setSelectedColor] = useState('#051650');
   const [activeTab, setActiveTab] = useState<string | null>('contacts');
@@ -36,12 +37,15 @@ export default function Home() {
 
     try {
       const { supabase } = await import('../lib/supabase');
-      const formattedDetails = `Delivery Address: ${formData.address || 'Not specified'} | Color: ${formData.color} | Size: ${formData.size}`;
+      const contactInfo = formData.email 
+        ? `${formData.number} | Email: ${formData.email}`
+        : formData.number;
+      const formattedDetails = `Delivery Address: ${formData.address || 'Not specified'} | Color: ${formData.color} | Size: ${formData.size}${formData.email ? ` | Email: ${formData.email}` : ''}`;
       
       // Attempt rich insert with optional extended columns
       let { error } = await supabase.from('orders').insert([{
         customer_name: formData.name,
-        customer_contact: formData.number,
+        customer_contact: contactInfo,
         quantity: parseInt(formData.bands) || 1,
         status: 'pending',
         shipping_address: formData.address,
@@ -54,7 +58,7 @@ export default function Home() {
       if (error) {
         const fallbackRes = await supabase.from('orders').insert([{
           customer_name: formData.name,
-          customer_contact: `${formData.number} [${formattedDetails}]`,
+          customer_contact: `${contactInfo} [${formattedDetails}]`,
           quantity: parseInt(formData.bands) || 1,
           status: 'pending'
         }]);
@@ -64,14 +68,35 @@ export default function Home() {
       if (error) {
         setSubmitMessage('Error submitting order: ' + error.message);
       } else {
-        setSubmitMessage('Thank you! Your order has been placed successfully. Our team will review the details and process dispatch.');
+        setSubmitMessage('Thank you! Your order has been placed successfully. A confirmation email has been sent, and our team will process dispatch.');
+
+        // Trigger order notification email (Client + Admin)
+        try {
+          fetch('/api/notify/order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              customer_name: formData.name,
+              customer_email: formData.email,
+              customer_phone: formData.number,
+              quantity: formData.bands,
+              color: formData.color,
+              size: formData.size,
+              shipping_address: formData.address
+            })
+          }).catch(err => console.error("Order notification trigger error:", err));
+        } catch (emailErr) {
+          console.warn("Order email exception:", emailErr);
+        }
+
         setFormData({
           name: '',
+          email: '',
           number: '',
           bands: '1',
           address: '',
           color: 'Navy Blue',
-          size: 'Kids Standard (Medium)'
+          size: 'Kids Small (Toddler 2-5 yrs)'
         });
       }
     } catch (err: any) {
@@ -608,7 +633,21 @@ export default function Home() {
                   className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-xs font-semibold text-[#051650] transition-all"
                 />
               </div>
-              
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">email address</label>
+                <input 
+                  type="email" 
+                  required
+                  placeholder="Email Address"
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-xs font-semibold text-[#051650] transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">number</label>
                 <input 
@@ -620,22 +659,22 @@ export default function Home() {
                   className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-xs font-semibold text-[#051650] transition-all"
                 />
               </div>
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Quantity (Bands)</label>
                 <input 
                   type="number" 
                   min="1"
                   required
-                  placeholder="How many safety wristbands?"
+                  placeholder="1"
                   value={formData.bands}
                   onChange={(e) => setFormData({...formData, bands: e.target.value})}
                   className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-xs font-semibold text-[#051650] transition-all"
                 />
               </div>
-
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Wristband Color</label>
                 <select
@@ -650,9 +689,7 @@ export default function Home() {
                   <option value="Safety Red">Safety Red 🔴</option>
                 </select>
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Wristband Size</label>
                 <select
@@ -665,18 +702,18 @@ export default function Home() {
                   <option value="Teen / Adult (Large 13+ yrs)">Teen / Adult (Large 13+ yrs)</option>
                 </select>
               </div>
+            </div>
 
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Delivery Location / Address</label>
-                <input 
-                  type="text" 
-                  required
-                  placeholder="Street Address, City, or Delivery Location"
-                  value={formData.address}
-                  onChange={(e) => setFormData({...formData, address: e.target.value})}
-                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-xs font-semibold text-[#051650] transition-all"
-                />
-              </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Delivery Location / Address</label>
+              <input 
+                type="text" 
+                required
+                placeholder="Street Address, City, or Delivery Location"
+                value={formData.address}
+                onChange={(e) => setFormData({...formData, address: e.target.value})}
+                className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-xs font-semibold text-[#051650] transition-all"
+              />
             </div>
             
             <button 

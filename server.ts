@@ -278,7 +278,7 @@ async function startServer() {
   // Send finder alert notification email
   app.post("/api/notify/finder", async (req, res) => {
     try {
-      const { tag_id, finder_name, finder_phone, custom_note, timestamp } = req.body;
+      const { tag_id, finder_name, finder_phone, finder_email, custom_note, timestamp } = req.body;
       
       const { email, childName } = await resolveTagAndParent(tag_id);
 
@@ -317,6 +317,12 @@ async function startServer() {
               <td style="padding: 8px 0; color: #64748b; font-weight: 600;">Finder Phone</td>
               <td style="padding: 8px 0; color: #0f172a; font-weight: 700; text-align: right;">${finder_phone || 'Not Provided'}</td>
             </tr>
+            ${finder_email ? `
+            <tr>
+              <td style="padding: 8px 0; color: #64748b; font-weight: 600;">Finder Email</td>
+              <td style="padding: 8px 0; color: #0f172a; font-weight: 700; text-align: right;"><a href="mailto:${finder_email}" style="color: #051650; text-decoration: underline;">${finder_email}</a></td>
+            </tr>
+            ` : ''}
             <tr>
               <td style="padding: 8px 0; color: #64748b; font-weight: 600;">Submitted Time</td>
               <td style="padding: 8px 0; color: #0f172a; font-weight: 700; text-align: right;">${formattedTime}</td>
@@ -495,7 +501,287 @@ async function startServer() {
     }
   });
 
-  // Send signup welcome notification email
+  // Helper to build cohesive LoTap HTML emails
+  function buildLoTapEmailHtml({
+    badgeText = "OFFICIAL NOTIFICATION",
+    badgeBg = "#C54B8C",
+    title = "",
+    subtitle = "Smart NFC Child Safety Wristbands",
+    introText = "",
+    tableRows = [],
+    contentBlocks = [],
+    ctaButton = null,
+    footerNote = "POPIA Compliant • Emergency Contact & Identification System"
+  }: {
+    badgeText?: string;
+    badgeBg?: string;
+    title?: string;
+    subtitle?: string;
+    introText?: string;
+    tableRows?: Array<{ label: string; value: string; isMonospace?: boolean; isHighlight?: boolean }>;
+    contentBlocks?: Array<{ title: string; items: string[] }>;
+    ctaButton?: { text: string; url: string } | null;
+    footerNote?: string;
+  }) {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      </head>
+      <body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #0f172a; -webkit-font-smoothing: antialiased;">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 24px 12px;">
+          <tr>
+            <td align="center">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(5,22,80,0.08);">
+                
+                <!-- Header Banner -->
+                <tr>
+                  <td style="background-color: #051650; padding: 32px 24px; text-align: center; border-bottom: 4px solid #C54B8C;">
+                    <table align="center" border="0" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
+                      <tr>
+                        <td align="center" style="padding-bottom: 8px;">
+                          <span style="font-size: 32px; font-weight: 900; color: #ffffff; letter-spacing: -0.03em; font-family: 'Helvetica Neue', Arial, sans-serif;">
+                            Lo<span style="color: #FFCFF1;">Tap</span>
+                          </span>
+                        </td>
+                      </tr>
+                      ${badgeText ? `
+                      <tr>
+                        <td align="center">
+                          <span style="display: inline-block; background-color: ${badgeBg}; color: #ffffff; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; padding: 4px 12px; border-radius: 999px;">
+                            ${badgeText}
+                          </span>
+                        </td>
+                      </tr>
+                      ` : ''}
+                    </table>
+                    <p style="margin: 8px 0 0 0; color: #cbd5e1; font-size: 12px; font-weight: 600; letter-spacing: 0.02em;">
+                      ${subtitle}
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- Content Body -->
+                <tr>
+                  <td style="padding: 32px 24px;">
+                    ${title ? `<h1 style="margin: 0 0 16px 0; font-size: 22px; font-weight: 800; color: #051650; line-height: 1.3;">${title}</h1>` : ''}
+                    ${introText ? `
+                    <div style="background-color: #fcf6fa; border-left: 4px solid #C54B8C; padding: 16px 20px; border-radius: 8px; margin-bottom: 24px;">
+                      <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #051650; font-weight: 500;">
+                        ${introText}
+                      </p>
+                    </div>
+                    ` : ''}
+
+                    <!-- Data Table -->
+                    ${tableRows && tableRows.length > 0 ? `
+                    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-bottom: 24px; background-color: #ffffff; border-radius: 12px; border: 1px solid #f1f5f9; overflow: hidden;">
+                      ${tableRows.map((row, idx) => `
+                        <tr style="border-bottom: ${idx === tableRows.length - 1 ? 'none' : '1px solid #f1f5f9'};">
+                          <td style="padding: 12px 16px; color: #64748b; font-size: 13px; font-weight: 600; width: 40%;">${row.label}</td>
+                          <td style="padding: 12px 16px; color: ${row.isHighlight ? '#C54B8C' : '#051650'}; font-size: 13px; font-weight: 700; text-align: right; ${row.isMonospace ? 'font-family: monospace; font-size: 14px;' : ''}">${row.value}</td>
+                        </tr>
+                      `).join('')}
+                    </table>
+                    ` : ''}
+
+                    <!-- Instruction Blocks -->
+                    ${contentBlocks.map(block => `
+                      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 18px 20px; border-radius: 12px; margin-bottom: 24px;">
+                        <h3 style="margin: 0 0 10px 0; font-size: 13px; font-weight: 800; color: #051650; text-transform: uppercase; letter-spacing: 0.05em;">${block.title}</h3>
+                        <ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #334155;">
+                          ${block.items.map(item => `<li style="margin-bottom: 6px;">${item}</li>`).join('')}
+                        </ul>
+                      </div>
+                    `).join('')}
+
+                    <!-- Call To Action Button -->
+                    ${ctaButton ? `
+                    <div style="text-align: center; margin: 28px 0 12px 0;">
+                      <a href="${ctaButton.url}" target="_blank" style="display: inline-block; background-color: #051650; color: #ffffff; font-size: 14px; font-weight: 800; text-decoration: none; padding: 14px 28px; border-radius: 12px; text-transform: uppercase; letter-spacing: 0.05em; box-shadow: 0 4px 12px rgba(5,22,80,0.25);">
+                        ${ctaButton.text}
+                      </a>
+                    </div>
+                    ` : ''}
+
+                  </td>
+                </tr>
+
+                <!-- Footer -->
+                <tr>
+                  <td style="background-color: #f8fafc; padding: 20px 24px; text-align: center; border-top: 1px solid #f1f5f9;">
+                    <p style="margin: 0 0 4px 0; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">
+                      LoTap Smart NFC Child Safety Wristbands
+                    </p>
+                    <p style="margin: 0 0 8px 0; font-size: 11px; color: #94a3b8;">
+                      ${footerNote}
+                    </p>
+                    <p style="margin: 0; font-size: 10px; color: #cbd5e1;">
+                      &copy; 2026 LoTap. All rights reserved.
+                    </p>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+  }
+
+  // Send new customer order notification emails (Client Confirmation + Admin Notification)
+  app.post("/api/notify/order", async (req, res) => {
+    try {
+      const {
+        customer_name,
+        customer_email,
+        customer_phone,
+        quantity,
+        color,
+        size,
+        shipping_address
+      } = req.body;
+
+      if (!customer_name) {
+        return res.status(400).json({ error: "customer_name is required" });
+      }
+
+      const formattedTime = new Date().toLocaleString("en-ZA", {
+        timeZone: "Africa/Johannesburg",
+        dateStyle: "medium",
+        timeStyle: "short"
+      });
+
+      const apiKey = process.env.RESEND_API_KEY;
+      const adminRecipients = ["findmewebapp7@gmail.com", "johannesburgwebstudio@gmail.com"];
+
+      let clientMailInfo = null;
+      let adminMailInfo = null;
+      let usedSandbox = false;
+
+      if (apiKey) {
+        const resend = getResendClient();
+        const rawFromEmail = process.env.RESEND_FROM_EMAIL;
+        const fromEmail = (rawFromEmail && rawFromEmail !== "onboarding@resend.dev")
+          ? rawFromEmail
+          : "alerts@lotap.co.za";
+
+        if (fromEmail === "onboarding@resend.dev") {
+          usedSandbox = true;
+        }
+
+        // 1. Send Order Confirmation Email to the Client
+        if (customer_email) {
+          const clientSubject = `🎉 Thank You for Your LoTap Order, ${customer_name}!`;
+          const clientHtml = buildLoTapEmailHtml({
+            badgeText: "ORDER CONFIRMED",
+            badgeBg: "#25D366",
+            title: `Thank You for Your Order, ${customer_name}!`,
+            subtitle: "LoTap NFC Child Safety Wristband Inquiry",
+            introText: `We have successfully received your order inquiry for <strong>${quantity || 1} LoTap Smart Safety Wristband(s)</strong>. Our team is now processing your request and preparing dispatch details!`,
+            tableRows: [
+              { label: "Customer Name", value: customer_name },
+              { label: "Email Address", value: customer_email },
+              { label: "Contact Number", value: customer_phone || 'Not Provided' },
+              { label: "Wristband Quantity", value: `${quantity || 1} Band(s)`, isHighlight: true },
+              { label: "Wristband Color", value: color || 'Navy Blue' },
+              { label: "Wristband Size", value: size || 'Kids Small' },
+              { label: "Delivery Address", value: shipping_address || 'Standard Delivery' },
+              { label: "Order Placed At", value: formattedTime }
+            ],
+            contentBlocks: [
+              {
+                title: "What Happens Next?",
+                items: [
+                  "<strong>Order Dispatch:</strong> Our team will package your custom silicone wristbands and arrange courier delivery to your specified location.",
+                  "<strong>Receive & Tap:</strong> Once delivered, bring your smartphone near the NFC chip or scan the printed QR code on the back of the band.",
+                  "<strong>Activate Profile:</strong> You will be guided to connect your free parent profile, add emergency contacts, and input any critical medical instructions in seconds."
+                ]
+              }
+            ],
+            ctaButton: {
+              text: "Visit LoTap Portal",
+              url: "https://lotap.co.za"
+            },
+            footerNote: "Questions about your order? Reply directly to this email or contact customer support."
+          });
+
+          try {
+            clientMailInfo = await resend.emails.send({
+              from: `LoTap Orders <${fromEmail}>`,
+              to: customer_email,
+              subject: clientSubject,
+              html: clientHtml
+            });
+          } catch (clientErr) {
+            console.error("Failed sending client order confirmation email:", clientErr);
+          }
+        }
+
+        // 2. Send Order Notification Email to Admin Team
+        const adminSubject = `📦 NEW ORDER: ${customer_name} (${quantity || 1} Band(s))`;
+        const adminHtml = buildLoTapEmailHtml({
+          badgeText: "NEW ORDER ALERT",
+          badgeBg: "#C54B8C",
+          title: `New Wristband Order Received`,
+          subtitle: "LoTap Admin Order Notification Service",
+          introText: `A new customer order inquiry has been placed on the website. Review details below to process fulfillment:`,
+          tableRows: [
+            { label: "Customer Name", value: customer_name, isHighlight: true },
+            { label: "Email Address", value: customer_email || 'Not Provided' },
+            { label: "Contact Phone", value: customer_phone || 'Not Provided' },
+            { label: "Order Quantity", value: `${quantity || 1} Wristband(s)`, isHighlight: true },
+            { label: "Wristband Color", value: color || 'Navy Blue' },
+            { label: "Wristband Size", value: size || 'Kids Small' },
+            { label: "Shipping Address", value: shipping_address || 'Not Provided' },
+            { label: "Order Time", value: formattedTime }
+          ],
+          contentBlocks: [
+            {
+              title: "Admin Fulfillment Instructions",
+              items: [
+                "Verify stock for the selected wristband color and size.",
+                "Log into the LoTap Admin Portal to assign Tag IDs and mark order as Fulfilled.",
+                "Contact the customer via phone/WhatsApp if courier clarification is needed."
+              ]
+            }
+          ],
+          ctaButton: {
+            text: "Open Admin Dashboard",
+            url: "https://lotap.co.za/admin"
+          }
+        });
+
+        try {
+          adminMailInfo = await resend.emails.send({
+            from: `LoTap Admin Alerts <${fromEmail}>`,
+            to: adminRecipients,
+            subject: adminSubject,
+            html: adminHtml
+          });
+        } catch (adminErr) {
+          console.error("Failed sending admin order alert email:", adminErr);
+        }
+      }
+
+      res.json({
+        success: true,
+        sent: !!apiKey,
+        usedSandbox,
+        clientMailInfo,
+        adminMailInfo
+      });
+    } catch (err: any) {
+      console.error("Order notification handler failed:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Send signup welcome notification email (Parent Welcome + Admin Registration Alert)
   app.post("/api/notify/signup", async (req, res) => {
     try {
       const { parent_email, parent_phone, child_name, tag_id } = req.body;
@@ -504,67 +790,45 @@ async function startServer() {
         return res.status(400).json({ error: "parent_email is required" });
       }
 
-      const subject = `🎉 Welcome to LoTap: ${child_name}'s Safety Profile is Active!`;
-      const html = `
-        <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; color: #0f172a;">
-          <div style="text-align: center; margin-bottom: 24px; border-bottom: 2px solid #FFCFF1; padding-bottom: 16px;">
-            <span style="font-size: 36px; display: inline-block; margin-bottom: 8px;">🎉</span>
-            <h1 style="color: #051650; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">Welcome to LoTap!</h1>
-            <p style="color: #c54b8c; font-size: 13px; font-weight: bold; margin: 4px 0 0 0; text-transform: uppercase; letter-spacing: 0.05em;">Your Parent Portal is Ready</p>
-          </div>
-          
-          <div style="background-color: #fcf6fa; padding: 18px; border-radius: 12px; margin-bottom: 24px; border-left: 4px solid #c54b8c;">
-            <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #051650; font-weight: bold;">
-              Hello Parent,
-            </p>
-            <p style="margin: 6px 0 0 0; font-size: 14px; line-height: 1.5; color: #334155;">
-              Thank you for registering with LoTap. Your child's physical safety wristband has been successfully linked and configured under your secure parent profile!
-            </p>
-          </div>
+      const formattedTime = new Date().toLocaleString("en-ZA", {
+        timeZone: "Africa/Johannesburg",
+        dateStyle: "medium",
+        timeStyle: "short"
+      });
 
-          <h3 style="color: #051650; font-size: 14px; margin: 0 0 12px 0; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">Registered Profile Details</h3>
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 14px;">
-            <tr>
-              <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Parent Email</td>
-              <td style="padding: 10px 0; color: #051650; font-weight: 700; text-align: right;">${parent_email}</td>
-            </tr>
-            <tr>
-              <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Registered Phone / WhatsApp</td>
-              <td style="padding: 10px 0; color: #051650; font-weight: 700; text-align: right;">${parent_phone || 'Not Provided'}</td>
-            </tr>
-            <tr>
-              <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Child's Name</td>
-              <td style="padding: 10px 0; color: #c54b8c; font-weight: 700; text-align: right;">👧 ${child_name}</td>
-            </tr>
-            <tr>
-              <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Unique Tag Code (ID)</td>
-              <td style="padding: 10px 0; color: #051650; font-weight: 700; font-family: monospace; text-align: right; background-color: #f1f5f9; padding: 4px 10px; border-radius: 6px; display: inline-block;">${tag_id}</td>
-            </tr>
-          </table>
-
-          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 18px; border-radius: 12px; margin-bottom: 24px;">
-            <h4 style="color: #051650; margin: 0 0 8px 0; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.025em;">How to use your LoTap band:</h4>
-            <ul style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6; color: #334155;">
-              <li style="margin-bottom: 6px;"><strong>Update at Any Time:</strong> If you change phone numbers, move, or need to update medical notes, simply log back into your LoTap Portal. The physical wristband will instantly pull the newest information!</li>
-              <li style="margin-bottom: 6px;"><strong>Emergency Mode:</strong> In case your child is separated from you, toggle <strong>Emergency Broadcast Mode</strong> in your portal to display prominent, high-priority contact buttons on the public profile.</li>
-              <li><strong>Scan Verification:</strong> Test scanning the QR code or tapping the physical NFC chip with a mobile phone. Verify that the contacts and medical guidelines look correct.</li>
-            </ul>
-          </div>
-
-          <div style="background-color: #fcf6fa; border: 1px solid #FFCFF1; padding: 16px; border-radius: 12px; text-align: center; margin-bottom: 24px;">
-            <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #051650; font-weight: 600;">
-              Your child's safety is our highest priority. All data is handled in strict compliance with the Protection of Personal Information Act (POPIA).
-            </p>
-          </div>
-
-          <div style="text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 16px;">
-            <p style="margin: 0 0 4px 0;">LoTap Smart Safety Wristbands &copy; 2026</p>
-            <p style="margin: 0;">Sent automatically via Resend Mailer Integration</p>
-          </div>
-        </div>
-      `;
+      const parentSubject = `🎉 Welcome to LoTap: ${child_name || 'Child'}'s Safety Profile is Active!`;
+      const parentHtml = buildLoTapEmailHtml({
+        badgeText: "ACCOUNT REGISTERED",
+        badgeBg: "#25D366",
+        title: `Welcome to LoTap Parent Safety Portal!`,
+        subtitle: "Smart NFC Safety Wristband Linked",
+        introText: `Hello! Thank you for registering with LoTap. Your child's physical safety wristband has been successfully linked and activated under your secure parent profile.`,
+        tableRows: [
+          { label: "Parent Email", value: parent_email },
+          { label: "Registered Phone / WhatsApp", value: parent_phone || 'Not Provided' },
+          { label: "Child's Name", value: `👧 ${child_name || 'Child Profile'}`, isHighlight: true },
+          { label: "Unique Tag Code (ID)", value: tag_id || 'N/A', isMonospace: true, isHighlight: true },
+          { label: "Registered At", value: formattedTime }
+        ],
+        contentBlocks: [
+          {
+            title: "How to Manage Your Safety Wristband",
+            items: [
+              "<strong>Update Contacts Anytime:</strong> Change phone numbers or medical notes anytime in your Parent Portal. The physical wristband updates instantly!",
+              "<strong>Emergency Mode:</strong> In an emergency, toggle Broadcast Mode in your portal to show prominent alert buttons to anyone scanning the band.",
+              "<strong>Test Scan:</strong> Try tapping the physical NFC chip with your phone or scanning the printed QR code to preview the active safety card."
+            ]
+          }
+        ],
+        ctaButton: {
+          text: "Open Parent Dashboard",
+          url: "https://lotap.co.za/dashboard"
+        },
+        footerNote: "Your child's privacy and safety are protected under POPIA regulations."
+      });
 
       let info = null;
+      let adminInfo = null;
       let usedSandbox = false;
       
       const apiKey = process.env.RESEND_API_KEY;
@@ -574,75 +838,50 @@ async function startServer() {
         const fromEmail = (rawFromEmail && rawFromEmail !== "onboarding@resend.dev")
           ? rawFromEmail
           : "alerts@lotap.co.za";
-        const toEmail = parent_email;
+
         if (fromEmail === "onboarding@resend.dev") {
           usedSandbox = true;
         }
 
+        // 1. Send Parent Welcome Email
         info = await resend.emails.send({
           from: `LoTap Alerts <${fromEmail}>`,
-          to: toEmail,
-          subject,
-          html
+          to: parent_email,
+          subject: parentSubject,
+          html: parentHtml
         });
 
-        // Automatically send a registration confirmation alert to the LoTap administrators!
+        // 2. Send Admin Registration Alert Email
         const adminRecipients = ["findmewebapp7@gmail.com", "johannesburgwebstudio@gmail.com"];
-
-        const adminSubject = `📢 NEW REGISTRATION: ${child_name}'s Profile Linked (${tag_id})`;
-        const adminHtml = `
-          <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #dce6f5; border-radius: 16px; background-color: #f8fafc; color: #0f172a;">
-            <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #051650; padding-bottom: 12px;">
-              <span style="font-size: 28px;">📢</span>
-              <h2 style="color: #051650; margin: 6px 0 0 0; font-size: 20px; font-weight: 800; text-transform: uppercase; letter-spacing: -0.015em;">LoTap Admin Portal Alert</h2>
-              <p style="color: #64748b; font-size: 11px; font-weight: bold; margin: 2px 0 0 0; text-transform: uppercase;">New User Account Connected</p>
-            </div>
-            
-            <p style="font-size: 14px; line-height: 1.5; color: #334155;">
-              A parent has successfully created a secure account and linked their child's safety wristband on the platform.
-            </p>
-            
-            <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px; background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden;">
-              <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 12px; font-weight: 600; color: #64748b;">Parent Email:</td>
-                <td style="padding: 12px; font-weight: 700; color: #051650; text-align: right;">${parent_email}</td>
-              </tr>
-              <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 12px; font-weight: 600; color: #64748b;">Contact / WhatsApp:</td>
-                <td style="padding: 12px; font-weight: 700; color: #051650; text-align: right;">${parent_phone || 'Not Provided'}</td>
-              </tr>
-              <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 12px; font-weight: 600; color: #64748b;">Child Name:</td>
-                <td style="padding: 12px; font-weight: 700; color: #c54b8c; text-align: right;">👧 ${child_name}</td>
-              </tr>
-              <tr>
-                <td style="padding: 12px; font-weight: 600; color: #64748b;">Wristband Code (Tag ID):</td>
-                <td style="padding: 12px; font-weight: 700; color: #051650; text-align: right; font-family: monospace; font-size: 14px;">${tag_id}</td>
-              </tr>
-            </table>
-
-            <div style="background-color: #fffbeb; border: 1px solid #fef3c7; padding: 12px; border-radius: 8px; text-align: center; margin-top: 16px;">
-              <p style="margin: 0; font-size: 11px; line-height: 1.4; color: #b45309; font-weight: 600;">
-                Action Required: Check this child's medical info and profile label inside your secure Admin Dashboard.
-              </p>
-            </div>
-
-            <div style="text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 14px; margin-top: 20px;">
-              LoTap Admin Notification Service &copy; 2026
-            </div>
-          </div>
-        `;
+        const adminSubject = `📢 NEW REGISTRATION: ${child_name || 'Child'} Linked (${tag_id || 'Tag'})`;
+        const adminHtml = buildLoTapEmailHtml({
+          badgeText: "NEW PARENT REGISTRATION",
+          badgeBg: "#051650",
+          title: `New Parent Account & Wristband Linked`,
+          subtitle: "LoTap System Registration Notice",
+          introText: `A parent has registered an account and linked a physical safety wristband on the platform:`,
+          tableRows: [
+            { label: "Parent Email", value: parent_email, isHighlight: true },
+            { label: "Contact Phone / WhatsApp", value: parent_phone || 'Not Provided' },
+            { label: "Child Name", value: `👧 ${child_name || 'Unnamed Child'}` },
+            { label: "Wristband Tag Code", value: tag_id || 'N/A', isMonospace: true, isHighlight: true },
+            { label: "Registration Date", value: formattedTime }
+          ],
+          ctaButton: {
+            text: "Review in Admin Portal",
+            url: "https://lotap.co.za/admin"
+          }
+        });
 
         try {
-          // Send confirmation alert directly to the admin addresses
-          await resend.emails.send({
+          adminInfo = await resend.emails.send({
             from: `LoTap Admin Alerts <${fromEmail}>`,
             to: adminRecipients,
             subject: adminSubject,
             html: adminHtml
           });
         } catch (adminErr) {
-          console.error("Failed to send administrative signup confirmation:", adminErr);
+          console.error("Failed sending admin registration alert:", adminErr);
         }
       }
 
@@ -651,9 +890,9 @@ async function startServer() {
         sent: !!apiKey,
         usedSandbox,
         recipient: parent_email,
-        subject,
-        html,
-        info
+        subject: parentSubject,
+        info,
+        adminInfo
       });
     } catch (err: any) {
       console.error("Signup notification failed:", err);

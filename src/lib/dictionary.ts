@@ -10,6 +10,7 @@ export const DICTIONARY = {
     finderSub: 'Enter your contact details so the parent can reach you immediately.',
     finderName: 'Your Name / Org',
     finderPhone: 'Your Phone Number',
+    finderEmail: 'Your Email Address (Optional)',
     finderNote: 'Location Note (e.g. sitting near entrance)',
     finderBtn: '💬 Send Alert to Parent'
   },
@@ -24,6 +25,7 @@ export const DICTIONARY = {
     finderSub: 'Voer jou besonderhede in sodat die ouer jou dadelik kan kontak.',
     finderName: 'Jou Naam / Org',
     finderPhone: 'Jou Telefoonnommer',
+    finderEmail: 'Jou E-posadres (Opsioneel)',
     finderNote: 'Ligging Nota (bv. sit naby die ingang)',
     finderBtn: '💬 Stuur Waarskuwing aan Ouer'
   },
@@ -38,6 +40,7 @@ export const DICTIONARY = {
     finderSub: 'Faka imininingwane yakho ukuze umzali akuthinte masinyane.',
     finderName: 'Igama Lakho / Org',
     finderPhone: 'Inombolo Yakho Yocingo',
+    finderEmail: 'I-imeli Yakho (Kuyakhetheka)',
     finderNote: 'Inothi Lendawo (isb. uhlezi eduze nomnyango)',
     finderBtn: '💬 Thumela Alethi Kumzali'
   },
@@ -52,6 +55,7 @@ export const DICTIONARY = {
     finderSub: 'Tsenya dintlha tša gago tša kgokagano gore motswadi a go thute ka ponyo ya leihlo.',
     finderName: 'Leina la Gago / Org',
     finderPhone: 'Nomoro ya Gago ya Mogala',
+    finderEmail: 'E-meile ya Gago (Ka kgetho)',
     finderNote: 'Dintlha tša Lefelo (mohl. o dutše kgauswi le mojako)',
     finderBtn: '💬 Romela Aleriti go Motswadi'
   }

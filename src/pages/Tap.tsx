@@ -43,6 +43,7 @@ export default function TapView() {
   const [customNote, setCustomNote] = useState('');
   const [finderName, setFinderName] = useState('');
   const [finderPhone, setFinderPhone] = useState('');
+  const [finderEmail, setFinderEmail] = useState('');
 
   useEffect(() => {
     const fetchTag = async () => {
@@ -293,6 +294,9 @@ export default function TapView() {
     if (finderPhone.trim()) {
       msg += `📞 *Finder Contact:* ${finderPhone.trim()}\n`;
     }
+    if (finderEmail.trim()) {
+      msg += `✉️ *Finder Email:* ${finderEmail.trim()}\n`;
+    }
     if (customNote.trim()) {
       msg += `📍 *Note/Location:* ${customNote.trim()}\n`;
     }
@@ -311,6 +315,7 @@ export default function TapView() {
         child_name: record.child_name,
         finder_name: finderName.trim(),
         finder_phone: finderPhone.trim(),
+        finder_email: finderEmail.trim(),
         custom_note: customNote.trim(),
         timestamp: new Date().toISOString()
       })
@@ -610,6 +615,9 @@ export default function TapView() {
                     {c.whatsapp && c.phone && (
                       <a href={`https://wa.me/${cleanPhone(c.phone).replace('+', '')}`} onClick={triggerHaptic} target="_blank" rel="noreferrer" className="w-9 h-9 rounded-full bg-[#25D366] text-white flex items-center justify-center text-sm shadow-sm hover:bg-[#20bd5a] transition-colors" title={t.whatsapp}>💬</a>
                     )}
+                    {c.email && (
+                      <a href={`mailto:${c.email}`} onClick={triggerHaptic} className="w-9 h-9 rounded-full bg-[#C54B8C] text-white flex items-center justify-center text-sm shadow-sm hover:bg-[#B53389] transition-colors" title="Send Email">✉️</a>
+                    )}
                   </div>
                 </div>
               ))
@@ -660,21 +668,32 @@ export default function TapView() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">{t.finderNote}</label>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">{t.finderEmail}</label>
                   <input
-                    type="text"
-                    placeholder="e.g. At information desk"
-                    value={customNote}
-                    onChange={e => setCustomNote(e.target.value)}
+                    type="email"
+                    placeholder="e.g. officer@saps.gov.za"
+                    value={finderEmail}
+                    onChange={e => setFinderEmail(e.target.value)}
                     className="w-full p-2.5 text-xs border border-[#DCE6F5] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C54B8C] bg-white text-[#051650]"
                   />
                 </div>
               </div>
 
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">{t.finderNote}</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Sitting at security desk gate 2"
+                  value={customNote}
+                  onChange={e => setCustomNote(e.target.value)}
+                  className="w-full p-2.5 text-xs border border-[#DCE6F5] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#C54B8C] bg-white text-[#051650]"
+                />
+              </div>
+
               <button
                 type="submit"
                 onClick={triggerHaptic}
-                disabled={!finderName.trim() && !finderPhone.trim() && !customNote.trim()}
+                disabled={!finderName.trim() && !finderPhone.trim() && !finderEmail.trim() && !customNote.trim()}
                 className="w-full mt-2 bg-[#051650] hover:bg-[#0A2472] text-white py-3 px-4 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-40"
               >
                 {t.finderBtn}

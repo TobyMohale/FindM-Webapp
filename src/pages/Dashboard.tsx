@@ -473,6 +473,25 @@ export default function Dashboard() {
 
       setTagToClaim('');
       await fetchUserTags(user.id);
+
+      // Trigger signup/claim notification email (Parent Welcome + Admin Alert)
+      if (user?.email) {
+        try {
+          fetch('/api/notify/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              parent_email: user.email,
+              parent_phone: parentPhone || '',
+              child_name: childName || 'Child Profile',
+              tag_id: cleanTagId.toUpperCase()
+            })
+          }).catch(err => console.error("Claim email notification error:", err));
+        } catch (emailErr) {
+          console.warn("Claim email exception:", emailErr);
+        }
+      }
+
       alert(`Success! Wristband Tag Code "${cleanTagId.toUpperCase()}" is now linked to your account.`);
     } catch (err: any) {
       alert('Error linking tag: ' + (err.message || err));
@@ -1350,9 +1369,15 @@ export default function Dashboard() {
                           </div>
                         </div>
                         
-                        <div className="mb-3">
-                          <label className="block text-[10px] uppercase text-slate-400 mb-1">Phone number</label>
-                          <input type="tel" placeholder="082 123 4567" value={c.phone} onChange={e => { const nc = [...formData.contacts]; nc[i].phone = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-slate-50 border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-400 mb-1">Phone number</label>
+                            <input type="tel" placeholder="082 123 4567" value={c.phone || ''} onChange={e => { const nc = [...formData.contacts]; nc[i].phone = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-slate-50 border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-400 mb-1">Email address (optional)</label>
+                            <input type="email" placeholder="contact@example.com" value={c.email || ''} onChange={e => { const nc = [...formData.contacts]; nc[i].email = e.target.value; setFormData({...formData, contacts: nc}); }} className={`w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800 text-white focus:ring-[#C54B8C]' : 'bg-slate-50 border-slate-200 text-[#051650] focus:ring-[#051650]'}`} />
+                          </div>
                         </div>
                         
                         <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer w-max">
