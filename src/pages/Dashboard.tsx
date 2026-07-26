@@ -83,13 +83,28 @@ export default function Dashboard() {
 
   // Theme State
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    return (localStorage.getItem('dashboard-theme') as 'light' | 'dark') || 'light';
+    return (localStorage.getItem('lotap_theme') as 'light' | 'dark') || 
+           (localStorage.getItem('dashboard-theme') as 'light' | 'dark') || 'light';
   });
+
+  useEffect(() => {
+    const handleThemeChange = () => {
+      const saved = (localStorage.getItem('lotap_theme') as 'light' | 'dark') || 
+                    (localStorage.getItem('dashboard-theme') as 'light' | 'dark') || 'light';
+      setTheme(saved);
+      document.documentElement.classList.toggle('dark', saved === 'dark');
+    };
+    window.addEventListener('theme-change', handleThemeChange);
+    return () => window.removeEventListener('theme-change', handleThemeChange);
+  }, []);
 
   const toggleTheme = () => {
     const nextTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(nextTheme);
+    localStorage.setItem('lotap_theme', nextTheme);
     localStorage.setItem('dashboard-theme', nextTheme);
+    document.documentElement.classList.toggle('dark', nextTheme === 'dark');
+    window.dispatchEvent(new Event('theme-change'));
   };
   
   // Auth Form State
