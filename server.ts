@@ -844,12 +844,16 @@ async function startServer() {
         }
 
         // 1. Send Parent Welcome Email
-        info = await resend.emails.send({
-          from: `LoTap Alerts <${fromEmail}>`,
-          to: parent_email,
-          subject: parentSubject,
-          html: parentHtml
-        });
+        try {
+          info = await resend.emails.send({
+            from: `LoTap Alerts <${fromEmail}>`,
+            to: parent_email,
+            subject: parentSubject,
+            html: parentHtml
+          });
+        } catch (parentErr) {
+          console.error("Failed sending parent welcome email:", parentErr);
+        }
 
         // 2. Send Admin Registration Alert Email
         const adminRecipients = ["findmewebapp7@gmail.com", "johannesburgwebstudio@gmail.com"];

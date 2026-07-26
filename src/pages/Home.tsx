@@ -84,7 +84,7 @@ export default function Home() {
               size: formData.size,
               shipping_address: formData.address
             })
-          }).catch(err => console.error("Order notification trigger error:", err));
+          }).catch(err => console.warn("Order notification trigger error:", err));
         } catch (emailErr) {
           console.warn("Order email exception:", emailErr);
         }

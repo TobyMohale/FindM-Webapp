@@ -67,6 +67,7 @@ export default function Dashboard() {
   const [tagToClaim, setTagToClaim] = useState('');
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
   const [tags, setTags] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -127,7 +128,7 @@ export default function Dashboard() {
 
   // Onboarding / SignUp Wizard State
   const [signUpStep, setSignUpStep] = useState(1);
-  const [childName, setChildName] = useState('Emma');
+  const [childName, setChildName] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [parentPhone, setParentPhone] = useState('');
   const [registeredTagId, setRegisteredTagId] = useState<string | null>(null);
@@ -149,12 +150,32 @@ export default function Dashboard() {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       setUser(currentUser);
       
+      const ADMIN_EMAILS = ['johannesburgwebstudio@gmail.com', 'admin@lotap.co.za', 'findmewebapp7@gmail.com'];
+      if (currentUser && ADMIN_EMAILS.includes(currentUser.email?.toLowerCase() || '')) {
+         navigate('/admin');
+         return;
+      }
+      
       if (currentUser) {
         await fetchUserTags(currentUser.id);
+        if (currentUser.email) {
+          await fetchUserOrders(currentUser.email);
+        }
       }
     };
     loadData();
   }, []);
+
+  const fetchUserOrders = async (userEmail: string) => {
+    if (!userEmail) return;
+    const { data } = await supabase.from('orders')
+      .select('*')
+      .ilike('customer_contact', `%${userEmail}%`)
+      .order('created_at', { ascending: false });
+    if (data) {
+      setOrders(data);
+    }
+  };
 
   const fetchUserTags = async (userId: string) => {
     const { data } = await supabase.from('tags').select('*').eq('owner_id', userId);
@@ -165,29 +186,8 @@ export default function Dashboard() {
       }
       return data;
     } else {
-      // Auto-create a child tag profile for the parent
-      const newTagId = 'lt' + Math.floor(100000 + Math.random() * 900000).toString();
-      const newProfile = {
-        tag_id: newTagId,
-        owner_id: userId,
-        child_name: childName || 'Child',
-        avatar: '🧒',
-        parent_whatsapp: parentPhone || '',
-        contacts: [],
-        medical: { allergies: '', conditions: '', notes: '' },
-        claimed_at: new Date().toISOString()
-      };
-      await supabase.from('tags').upsert([newProfile]);
-      const { data: updatedData } = await supabase.from('tags').select('*').eq('owner_id', userId);
-      if (updatedData && updatedData.length > 0) {
-        setTags(updatedData);
-        loadTagForEdit(updatedData[0]);
-        return updatedData;
-      } else {
-        setTags([newProfile]);
-        loadTagForEdit(newProfile);
-        return [newProfile];
-      }
+      setTags([]);
+      return [];
     }
   };
 
@@ -276,7 +276,7 @@ export default function Dashboard() {
             child_name: newChildName || 'Child Profile',
             tag_id: cleanTagId.toUpperCase()
           })
-        }).catch(err => console.error("Signup email error:", err));
+        }).catch(err => console.warn("Signup email error:", err));
       }
 
       const updatedTags = await fetchUserTags(user.id);
@@ -310,9 +310,18 @@ export default function Dashboard() {
     setAuthLoading(true);
     setAuthMsg('');
     setResendEmailSuccess(false);
-    const { error } = await supabase.auth.signInWithPassword({ email: email.toLowerCase().trim(), password });
+    let error;
+    try {
+      const result = await supabase.auth.signInWithPassword({ email: email.toLowerCase().trim(), password });
+      error = result.error;
+    } catch (err: any) {
+      error = err;
+    }
+    
     if (error) {
-      if (error.message.includes('Email not confirmed') || error.message.includes('Invalid login credentials')) {
+      if (error.message === 'Failed to fetch') {
+        setAuthMsg('Network error: Could not connect to the authentication server. Please check your internet connection or disable adblockers.');
+      } else if (error.message.includes('Email not confirmed') || error.message.includes('Invalid login credentials')) {
         setAuthMsg('Invalid login details. If you just registered, please check your email and click the confirmation link before signing in.');
       } else {
         setAuthMsg(error.message || 'Invalid login details.');
@@ -396,7 +405,7 @@ export default function Dashboard() {
         setAuthLoading(false);
 
         if (tagErr) {
-          console.error('Error validating tag code:', tagErr);
+          console.warn('Error validating tag code:', tagErr);
         }
 
         if (!tagRow) {
@@ -410,7 +419,7 @@ export default function Dashboard() {
         }
       } catch (err: any) {
         setAuthLoading(false);
-        console.error('Validation exception:', err);
+        console.warn('Validation exception:', err);
       }
     }
 
@@ -485,7 +494,7 @@ export default function Dashboard() {
         }]);
       }
     } catch (err) {
-      console.error('Error creating child tag profile on signup:', err);
+      console.warn('Error creating child tag profile on signup:', err);
     }
 
     try {
@@ -500,7 +509,20 @@ export default function Dashboard() {
         })
       });
     } catch (err) {
-      console.error('Failed to trigger signup notification email:', err);
+      console.warn('Failed to trigger signup notification email:', err);
+    }
+    
+    // Attempt auto-login
+    try {
+      const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+        email: email.toLowerCase().trim(),
+        password
+      });
+      if (signInErr) {
+        console.warn('Auto-login after signup failed:', signInErr);
+      }
+    } catch (err) {
+      console.warn('Auto-login exception:', err);
     }
 
     setRegisteredTagId(newTagId);
@@ -588,7 +610,7 @@ export default function Dashboard() {
               child_name: childName || 'Child Profile',
               tag_id: cleanTagId.toUpperCase()
             })
-          }).catch(err => console.error("Claim email notification error:", err));
+          }).catch(err => console.warn("Claim email notification error:", err));
         } catch (emailErr) {
           console.warn("Claim email exception:", emailErr);
         }
@@ -661,14 +683,14 @@ export default function Dashboard() {
           if (!fallback.error) {
             dbSuccess = true;
           } else {
-            console.error('Save error from Supabase:', fallback.error);
+            console.warn('Save error from Supabase:', fallback.error);
           }
         } else {
           dbSuccess = true;
         }
       }
     } catch (err: any) {
-      console.error('Catch error on save:', err);
+      console.warn('Catch error on save:', err);
     }
 
     // Always update local React state so user's edits are retained in current session
@@ -1162,7 +1184,7 @@ export default function Dashboard() {
               <span>Child Safety Profiles</span>
             </div>
             {tags.length === 0 ? (
-              <div className="p-6 text-center text-sm text-slate-500">Loading child profile...</div>
+              <div className="p-6 text-center text-sm text-slate-500 font-medium">No child profiles found.<br/><span className="text-[11px]">Click 'Add Digital Child Profile' to claim your wristband.</span></div>
             ) : (
               tags.map((t: any) => (
                 <button 
@@ -1211,6 +1233,40 @@ export default function Dashboard() {
                 <span>➕</span> Add Digital Child Profile
               </button>
             </div>
+            
+            {orders.length > 0 && (
+              <div className="mt-6 border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden bg-white dark:bg-slate-900/40">
+                <div className={`p-3 border-b font-bold text-xs uppercase tracking-wider flex items-center justify-between ${
+                  theme === 'dark' 
+                    ? 'bg-slate-950/60 border-white/10 text-slate-300' 
+                    : 'bg-slate-50 border-slate-200 text-slate-600'
+                }`}>
+                  <span>My Recent Orders</span>
+                </div>
+                <div className="flex flex-col">
+                  {orders.map((o: any) => (
+                    <div key={o.id} className="w-full text-left p-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3">
+                      <span className="text-2xl">📦</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-center mb-0.5">
+                          <span className={`font-semibold text-sm ${theme === 'dark' ? 'text-slate-100' : 'text-[#051650]'}`}>
+                            {o.quantity}x {o.color || 'Band'}
+                          </span>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                            o.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                          } uppercase`}>
+                            {o.status}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate">
+                          {new Date(o.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1620,7 +1676,7 @@ export default function Dashboard() {
                         onClick={() => {
                           triggerHaptic();
                           const publicUrl = `${getPublicOrigin()}/t/${formData.tag_id}`;
-                          const text = `🚨 LoTap Emergency Safety Profile for ${formData.child_name || 'Emma'}. Active NFC Wristband Code: ${formData.tag_id}. View emergency info and share live location here: ${publicUrl}`;
+                          const text = `🚨 LoTap Emergency Safety Profile for ${formData.child_name || 'Child'}. Active NFC Wristband Code: ${formData.tag_id}. View emergency info and share live location here: ${publicUrl}`;
                           window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
                         }}
                         className="w-full py-2.5 px-3 bg-[#25D366] text-white font-extrabold text-xs rounded-xl hover:bg-[#20bd5a] transition-all shadow-sm flex items-center justify-center gap-1.5 active:scale-95"

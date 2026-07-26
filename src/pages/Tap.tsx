@@ -130,7 +130,7 @@ export default function TapView() {
             const now = new Date().toISOString();
 
             supabase.rpc('increment_tag_scan', { target_tag_id: tagData.tag_id }).then(({ error }) => {
-              if (error) console.error("Error incrementing scan count:", error);
+              if (error) console.warn("Error incrementing scan count:", error);
             });
 
             setRecord({
@@ -151,7 +151,7 @@ export default function TapView() {
                   scan_count: newScanCount,
                   timestamp: now
                 })
-              }).catch(err => console.error('Resend scan alert error:', err));
+              }).catch(err => console.warn('Resend scan alert network error:', err.message));
             }
           }
         } else {
@@ -166,7 +166,7 @@ export default function TapView() {
           }
         }
       } catch (err: any) {
-        console.error("Catch error in fetchTag:", err);
+        console.warn("Catch error in fetchTag:", err);
         if (tagId !== 'demo01') {
           navigate(`/claim/${tagId}`, { replace: true });
           return;
@@ -240,7 +240,7 @@ export default function TapView() {
           })
         }).then(res => res.json())
           .then(resData => console.log('Resend location alert response:', resData))
-          .catch(err => console.error('Resend location alert error:', err));
+          .catch(err => console.warn('Resend location alert error:', err));
       },
       (err) => {
         console.warn("Geolocation failed:", err);
@@ -276,7 +276,7 @@ export default function TapView() {
         console.log('Resend location alert response:', resData);
         setShareStatus(`WhatsApp opened & automatic location alert email sent via Resend!`);
       })
-      .catch(err => console.error('Resend location alert error:', err));
+      .catch(err => console.warn('Resend location alert error:', err));
   };
 
   const handleFinderAlertSubmit = (e: React.FormEvent) => {
@@ -328,7 +328,7 @@ export default function TapView() {
           setFinderAlertStatus(prev => prev + " & sent an automatic email notification!");
         }
       })
-      .catch(err => console.error('Resend finder alert error:', err));
+      .catch(err => console.warn('Resend finder alert error:', err.message));
   };
 
   if (loading) {
