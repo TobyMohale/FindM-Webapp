@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, cleanPhone } from '../lib/supabase';
 import { DICTIONARY, LANGS, LangCode } from '../lib/dictionary';
@@ -44,6 +44,7 @@ export default function TapView() {
   const [finderName, setFinderName] = useState('');
   const [finderPhone, setFinderPhone] = useState('');
   const [finderEmail, setFinderEmail] = useState('');
+  const scanNotified = useRef(false);
 
   useEffect(() => {
     const fetchTag = async () => {
@@ -139,16 +140,19 @@ export default function TapView() {
             });
 
             // Trigger Resend scan alert notification
-            fetch('/api/notify/scan', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                tag_id: tagData.tag_id,
-                child_name: tagData.child_name,
-                scan_count: newScanCount,
-                timestamp: now
-              })
-            }).catch(err => console.error('Resend scan alert error:', err));
+            if (!scanNotified.current) {
+              scanNotified.current = true;
+              fetch('/api/notify/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  tag_id: tagData.tag_id,
+                  child_name: tagData.child_name,
+                  scan_count: newScanCount,
+                  timestamp: now
+                })
+              }).catch(err => console.error('Resend scan alert error:', err));
+            }
           }
         } else {
           // Tag code not found in DB -> guide parent directly to claim/registration page for setup

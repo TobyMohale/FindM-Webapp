@@ -310,9 +310,13 @@ export default function Dashboard() {
     setAuthLoading(true);
     setAuthMsg('');
     setResendEmailSuccess(false);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email: email.toLowerCase().trim(), password });
     if (error) {
-      setAuthMsg(error.message || 'Invalid login details.');
+      if (error.message.includes('Email not confirmed') || error.message.includes('Invalid login credentials')) {
+        setAuthMsg('Invalid login details. If you just registered, please check your email and click the confirmation link before signing in.');
+      } else {
+        setAuthMsg(error.message || 'Invalid login details.');
+      }
     } else {
       setAuthMsg('Logged in successfully!');
       window.location.reload();
@@ -321,7 +325,7 @@ export default function Dashboard() {
   };
 
   const handleResendConfirmation = async () => {
-    if (!email) {
+    if (!email || !email.trim()) {
       setAuthMsg('Please enter your email address first.');
       return;
     }
@@ -329,7 +333,7 @@ export default function Dashboard() {
     setAuthMsg('');
     const { error } = await supabase.auth.resend({
       type: 'signup',
-      email: email,
+      email: email.toLowerCase().trim(),
       options: {
         emailRedirectTo: window.location.origin
       }
@@ -345,13 +349,13 @@ export default function Dashboard() {
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) {
+    if (!email || !email.trim()) {
       setAuthMsg('Please enter your email address to receive a reset link.');
       return;
     }
     setAuthLoading(true);
     setAuthMsg('');
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.toLowerCase().trim(), {
       redirectTo: window.location.origin + '/reset-password',
     });
     setAuthLoading(false);
@@ -365,7 +369,7 @@ export default function Dashboard() {
 
   const handleSignUpNext = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) {
+    if (!email || !email.trim()) {
       setAuthMsg('Please enter a valid email address.');
       return;
     }
@@ -430,7 +434,7 @@ export default function Dashboard() {
     
     // 1. Sign up on database / Supabase
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: email.toLowerCase().trim(),
       password,
       options: {
         emailRedirectTo: window.location.origin,
@@ -1037,6 +1041,9 @@ export default function Dashboard() {
                   <div>
                     <h3 className="text-xl font-black text-[#051650] font-serif">Account Created!</h3>
                     <p className="text-xs text-slate-500 mt-1">Your child's unique safety code has been registered.</p>
+                    <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-xl text-blue-800 text-xs font-semibold leading-relaxed text-left">
+                      <p><strong>Note:</strong> If you are not automatically signed in on the next screen, you may need to <strong>verify your email address</strong>. Please check your inbox (and spam folder) for a confirmation link from us.</p>
+                    </div>
                   </div>
 
                   <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-2xl text-left space-y-3">

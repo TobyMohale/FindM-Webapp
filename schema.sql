@@ -250,8 +250,33 @@ end;
 $$;
 
 -- ==========================================
--- 9. PUBLIC GET TAG RPC FUNCTION
+-- 10. GET PARENT EMAIL BY TAG RPC FUNCTION
 -- ==========================================
+create or replace function public.get_parent_email_by_tag(p_tag_id text)
+returns text
+language plpgsql
+security definer
+as $$
+declare
+    v_owner_id uuid;
+    v_email text;
+begin
+    select owner_id into v_owner_id
+    from public.tags
+    where lower(tag_id) = lower(trim(p_tag_id));
+
+    if v_owner_id is null then
+        return null;
+    end if;
+
+    select email into v_email
+    from public.profiles
+    where id = v_owner_id;
+
+    return v_email;
+end;
+$$;
+
 create or replace function public.get_public_tag(p_tag_id text)
 returns jsonb
 language plpgsql
