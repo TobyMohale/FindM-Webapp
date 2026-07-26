@@ -170,7 +170,7 @@ export default function Dashboard() {
     if (!userEmail) return;
     const { data } = await supabase.from('orders')
       .select('*')
-      .ilike('customer_contact', `%${userEmail}%`)
+      .ilike('customer_email', userEmail)
       .order('created_at', { ascending: false });
     if (data) {
       setOrders(data);
@@ -239,12 +239,9 @@ export default function Dashboard() {
         });
 
         if (claimErr) {
-          await supabase.from('tags').update({
-            owner_id: user.id,
-            child_name: newChildName || existingTag.child_name || 'Child Profile',
-            parent_whatsapp: parentPhone || existingTag.parent_whatsapp || '',
-            claimed_at: new Date().toISOString()
-          }).eq('tag_id', existingTag.tag_id);
+          setModalError('Failed to claim tag: ' + claimErr.message);
+          setModalLoading(false);
+          return;
         }
       } else {
         // Tag does not exist in database yet -> Create new tag record linked to user
@@ -469,7 +466,7 @@ export default function Dashboard() {
 
     const newTagId = signupTagId.trim().toLowerCase() || ('lt' + Math.floor(100000 + Math.random() * 900000).toString());
 
-    // Call atomic claim_tag RPC function or fallback to direct insert
+    // Call atomic claim_tag RPC function
     try {
       const { error: claimErr } = await supabase.rpc('claim_tag', {
         p_tag_id: newTagId,
@@ -481,17 +478,9 @@ export default function Dashboard() {
       });
 
       if (claimErr) {
-        // Direct upsert to ensure user has tag profile initialized
-        await supabase.from('tags').upsert([{
-          tag_id: newTagId,
-          owner_id: registeredUser.id,
-          child_name: childName || 'Child',
-          avatar: '🧒',
-          parent_whatsapp: parentPhone || '',
-          contacts: [],
-          medical: { allergies: '', conditions: '', notes: '' },
-          claimed_at: new Date().toISOString()
-        }]);
+        setAuthMsg('Failed to initialize tag: ' + claimErr.message);
+        setAuthLoading(false);
+        return;
       }
     } catch (err) {
       console.warn('Error creating child tag profile on signup:', err);
@@ -583,16 +572,9 @@ export default function Dashboard() {
       });
 
       if (claimError) {
-        // Fallback to direct update in tags table
-        await supabase.from('tags').update({
-          owner_id: user.id,
-          child_name: childName || 'Child',
-          avatar: '🧒',
-          parent_whatsapp: parentPhone || '',
-          contacts: [],
-          medical: { allergies: '', conditions: '', notes: '' },
-          claimed_at: new Date().toISOString()
-        }).eq('tag_id', cleanTagId);
+        alert('Failed to claim tag: ' + claimError.message);
+        setSaving(false);
+        return;
       }
 
       setTagToClaim('');
@@ -1184,7 +1166,9 @@ export default function Dashboard() {
               <span>Child Safety Profiles</span>
             </div>
             {tags.length === 0 ? (
-              <div className="p-6 text-center text-sm text-slate-500 font-medium">No child profiles found.<br/><span className="text-[11px]">Click 'Add Digital Child Profile' to claim your wristband.</span></div>
+              <div className="p-6 text-center text-sm text-slate-500 font-medium">
+                No child profile yet. Claim your wristband's tag code below, or <a href="/#order" className="text-[#C54B8C] underline hover:text-[#051650]">place an order first</a>.
+              </div>
             ) : (
               tags.map((t: any) => (
                 <button 
@@ -1250,7 +1234,7 @@ export default function Dashboard() {
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-center mb-0.5">
                           <span className={`font-semibold text-sm ${theme === 'dark' ? 'text-slate-100' : 'text-[#051650]'}`}>
-                            {o.quantity}x {o.color || 'Band'}
+                            {o.quantity}x {o.color || 'Band'} ({o.size || 'Small'})
                           </span>
                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                             o.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
@@ -1258,7 +1242,10 @@ export default function Dashboard() {
                             {o.status}
                           </span>
                         </div>
-                        <div className="text-[10px] text-slate-500 truncate">
+                        <div className="text-[10px] text-slate-500 truncate mb-1">
+                          Delivery: {o.shipping_address || 'Standard Delivery'}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
                           {new Date(o.created_at).toLocaleDateString()}
                         </div>
                       </div>

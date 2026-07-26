@@ -40,30 +40,17 @@ export default function Home() {
       const contactInfo = formData.email 
         ? `${formData.number} | Email: ${formData.email}`
         : formData.number;
-      const formattedDetails = `Delivery Address: ${formData.address || 'Not specified'} | Color: ${formData.color} | Size: ${formData.size}${formData.email ? ` | Email: ${formData.email}` : ''}`;
       
-      // Attempt rich insert with optional extended columns
-      let { error } = await supabase.from('orders').insert([{
+      const { error } = await supabase.from('orders').insert([{
         customer_name: formData.name,
         customer_contact: contactInfo,
+        customer_email: formData.email || null,
         quantity: parseInt(formData.bands) || 1,
         status: 'pending',
         shipping_address: formData.address,
         color: formData.color,
-        size: formData.size,
-        details: formattedDetails
+        size: formData.size
       }]);
-
-      // If schema lacks extended columns, fallback gracefully using contact text
-      if (error) {
-        const fallbackRes = await supabase.from('orders').insert([{
-          customer_name: formData.name,
-          customer_contact: `${contactInfo} [${formattedDetails}]`,
-          quantity: parseInt(formData.bands) || 1,
-          status: 'pending'
-        }]);
-        error = fallbackRes.error;
-      }
       
       if (error) {
         setSubmitMessage('Error submitting order: ' + error.message);
