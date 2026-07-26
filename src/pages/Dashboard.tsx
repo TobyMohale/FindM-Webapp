@@ -145,6 +145,8 @@ export default function Dashboard() {
     }
   }, [location.pathname]);
 
+  const [guestMode, setGuestMode] = useState(true);
+
   useEffect(() => {
     const loadData = async () => {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
@@ -161,6 +163,20 @@ export default function Dashboard() {
         if (currentUser.email) {
           await fetchUserOrders(currentUser.email);
         }
+      } else {
+        const defaultGuestTag = {
+          tag_id: 'lt456087',
+          owner_id: 'guest',
+          child_name: 'Emma',
+          avatar: '🧒',
+          parent_whatsapp: '',
+          contacts: [],
+          medical: { allergies: '', conditions: '', notes: '' },
+          emergency_mode: false,
+          claimed_at: new Date().toISOString()
+        };
+        setTags([defaultGuestTag]);
+        loadTagForEdit(defaultGuestTag);
       }
     };
     loadData();
@@ -181,18 +197,31 @@ export default function Dashboard() {
     const { data } = await supabase.from('tags').select('*').eq('owner_id', userId);
     if (data && data.length > 0) {
       setTags(data);
-      if (!activeTagId) {
+      if (!activeTagId || !data.some((t: any) => t.tag_id === activeTagId)) {
         loadTagForEdit(data[0]);
       }
       return data;
     } else {
-      setTags([]);
+      // User has no saved tags in DB yet. Initialize setup profile template in local state
+      const defaultTag = {
+        tag_id: 'lt456087',
+        owner_id: userId,
+        child_name: 'Emma',
+        avatar: '🧒',
+        parent_whatsapp: '',
+        contacts: [],
+        medical: { allergies: '', conditions: '', notes: '' },
+        emergency_mode: false,
+        claimed_at: new Date().toISOString()
+      };
+      setTags([defaultTag]);
+      loadTagForEdit(defaultTag);
       return [];
     }
   };
 
-  const handleAddChildWithCode = async () => {
-    const cleanTagId = newChildTagCode.trim().toLowerCase();
+  const handleAddChildWithCode = async (codeOverride?: string, nameOverride?: string) => {
+    const cleanTagId = (codeOverride !== undefined ? codeOverride : newChildTagCode).trim().toLowerCase();
     if (!cleanTagId) return;
     
     if (cleanTagId.length < 3 || cleanTagId.length > 12) {
@@ -209,6 +238,8 @@ export default function Dashboard() {
         setModalLoading(false);
         return;
       }
+
+      const targetChildName = nameOverride !== undefined ? nameOverride : (newChildName || 'Emma');
 
       // 1. Check if tag exists in database
       const { data: existingTag, error: checkErr } = await supabase
@@ -231,7 +262,7 @@ export default function Dashboard() {
         // Claim existing tag
         const { error: claimErr } = await supabase.rpc('claim_tag', {
           p_tag_id: existingTag.tag_id,
-          p_child_name: newChildName || existingTag.child_name || 'Child Profile',
+          p_child_name: targetChildName || existingTag.child_name || 'Emma',
           p_avatar: existingTag.avatar || '🧒',
           p_parent_whatsapp: parentPhone || existingTag.parent_whatsapp || '',
           p_contacts: existingTag.contacts || [],
@@ -239,26 +270,49 @@ export default function Dashboard() {
         });
 
         if (claimErr) {
-          setModalError('Failed to claim tag: ' + claimErr.message);
-          setModalLoading(false);
-          return;
+          // Direct fallback update
+          const { error: updateErr } = await supabase.from('tags').update({
+            owner_id: user.id,
+            child_name: targetChildName || existingTag.child_name || 'Emma',
+            parent_whatsapp: parentPhone || existingTag.parent_whatsapp || '',
+            claimed_at: new Date().toISOString()
+          }).eq('tag_id', existingTag.tag_id);
+
+          if (updateErr) {
+            setModalError('Failed to claim tag: ' + claimErr.message);
+            setModalLoading(false);
+            return;
+          }
         }
       } else {
-        // Tag does not exist in database yet -> Create new tag record linked to user
-        const newProfile = {
-          tag_id: cleanTagId,
-          owner_id: user.id,
-          child_name: newChildName || 'Child Profile',
-          avatar: '🧒',
-          parent_whatsapp: parentPhone || '',
-          contacts: [],
-          medical: { allergies: '', conditions: '', notes: '' },
-          claimed_at: new Date().toISOString()
-        };
+        // Tag does not exist in database yet -> Claim via RPC or fallback insert
+        const { error: claimErr } = await supabase.rpc('claim_tag', {
+          p_tag_id: cleanTagId,
+          p_child_name: targetChildName || 'Emma',
+          p_avatar: '🧒',
+          p_parent_whatsapp: parentPhone || '',
+          p_contacts: [],
+          p_medical: { allergies: '', conditions: '', notes: '' }
+        });
 
-        const { error: insertErr } = await supabase.from('tags').insert([newProfile]);
-        if (insertErr) {
-          throw new Error('Failed to create tag profile: ' + insertErr.message);
+        if (claimErr) {
+          const newProfile = {
+            tag_id: cleanTagId,
+            owner_id: user.id,
+            child_name: targetChildName || 'Emma',
+            avatar: '🧒',
+            parent_whatsapp: parentPhone || '',
+            contacts: [],
+            medical: { allergies: '', conditions: '', notes: '' },
+            claimed_at: new Date().toISOString()
+          };
+
+          const { error: insertErr } = await supabase.from('tags').insert([newProfile]);
+          if (insertErr) {
+            setModalError('Failed to create tag profile: ' + insertErr.message);
+            setModalLoading(false);
+            return;
+          }
         }
       }
 
@@ -270,7 +324,7 @@ export default function Dashboard() {
           body: JSON.stringify({
             parent_email: user.email,
             parent_phone: parentPhone || '',
-            child_name: newChildName || 'Child Profile',
+            child_name: targetChildName || 'Emma',
             tag_id: cleanTagId.toUpperCase()
           })
         }).catch(err => console.warn("Signup email error:", err));
@@ -281,6 +335,8 @@ export default function Dashboard() {
         const addedTag = updatedTags.find((t: any) => t.tag_id.toLowerCase() === cleanTagId);
         if (addedTag) {
           loadTagForEdit(addedTag);
+        } else {
+          loadTagForEdit(updatedTags[0]);
         }
       }
 
@@ -639,40 +695,47 @@ export default function Dashboard() {
     
     // Clean up base payload matching standard Supabase tags table columns
     const basePayload = {
-      child_name: formData.child_name || '',
+      child_name: formData.child_name || 'Emma',
       avatar: formData.avatar || '🧒',
       parent_whatsapp: formData.parent_whatsapp || '',
       contacts: Array.isArray(formData.contacts) ? formData.contacts : [],
       medical: formData.medical || { allergies: '', conditions: '', notes: '' }
     };
 
-    let dbSuccess = false;
+    if (user) {
+      try {
+        // Attempt atomic claim using claim_tag RPC
+        const { error: claimErr } = await supabase.rpc('claim_tag', {
+          p_tag_id: activeTagId.toLowerCase().trim(),
+          p_child_name: basePayload.child_name,
+          p_avatar: basePayload.avatar,
+          p_parent_whatsapp: basePayload.parent_whatsapp,
+          p_contacts: basePayload.contacts,
+          p_medical: basePayload.medical
+        });
 
-    try {
-      if (supabase && typeof supabase.from === 'function') {
-        // Try updating with emergency_mode first in case column exists
-        let { error } = await supabase
-          .from('tags')
-          .update({ ...basePayload, emergency_mode: formData.emergency_mode || false })
-          .eq('tag_id', activeTagId);
-
-        // Fallback to base columns if emergency_mode column does not exist in DB schema
-        if (error) {
-          const fallback = await supabase
-            .from('tags')
-            .update(basePayload)
-            .eq('tag_id', activeTagId);
-          if (!fallback.error) {
-            dbSuccess = true;
-          } else {
-            console.warn('Save error from Supabase:', fallback.error);
-          }
-        } else {
-          dbSuccess = true;
+        if (claimErr) {
+          // Direct fallback update or upsert
+          await supabase.from('tags').upsert({
+            tag_id: activeTagId.toLowerCase().trim(),
+            owner_id: user.id,
+            ...basePayload,
+            emergency_mode: formData.emergency_mode || false,
+            claimed_at: new Date().toISOString()
+          });
         }
+
+        const reFetched = await supabase.from('tags').select('*').eq('owner_id', user.id);
+        if (reFetched.data && reFetched.data.length > 0) {
+          setTags(reFetched.data);
+          const current = reFetched.data.find((t: any) => t.tag_id.toLowerCase() === activeTagId.toLowerCase());
+          if (current) {
+            loadTagForEdit(current);
+          }
+        }
+      } catch (err: any) {
+        console.warn('Catch error on save:', err);
       }
-    } catch (err: any) {
-      console.warn('Catch error on save:', err);
     }
 
     // Always update local React state so user's edits are retained in current session
@@ -681,16 +744,37 @@ export default function Dashboard() {
     
     setSaving(false);
 
-    setToastMessage(`✨ Information for ${basePayload.child_name || 'Tag ' + activeTagId} saved successfully!`);
+    if (user) {
+      setToastMessage(`✨ Safety profile for ${basePayload.child_name} saved successfully!`);
+    } else {
+      setToastMessage(`✨ Local preview updated! Sign in or register to permanently bind to your account.`);
+    }
     setTimeout(() => setToastMessage(null), 4000);
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    window.location.reload();
+    if (user) {
+      await supabase.auth.signOut();
+    }
+    setUser(null);
+    setOrders([]);
+    setGuestMode(true);
+    const defaultGuestTag = {
+      tag_id: 'lt456087',
+      owner_id: 'guest',
+      child_name: 'Emma',
+      avatar: '🧒',
+      parent_whatsapp: '',
+      contacts: [],
+      medical: { allergies: '', conditions: '', notes: '' },
+      emergency_mode: false,
+      claimed_at: new Date().toISOString()
+    };
+    setTags([defaultGuestTag]);
+    loadTagForEdit(defaultGuestTag);
   };
 
-  if (!user) {
+  if (!user && !guestMode) {
     return (
       <div className="min-h-[calc(100vh-64px)] bg-[#FDFBF7] flex items-center justify-center p-4 relative overflow-hidden">
         {/* Morphing Liquid Background Blobs */}
@@ -808,6 +892,7 @@ export default function Dashboard() {
                   type="email" 
                   placeholder="parent@example.com" 
                   required
+                  autoComplete="username"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-sm text-[#051650] font-medium transition-all" 
@@ -829,6 +914,7 @@ export default function Dashboard() {
                   type="password" 
                   placeholder="••••••••" 
                   required
+                  autoComplete="current-password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] focus:bg-white text-sm text-[#051650] font-medium transition-all" 
@@ -1149,7 +1235,19 @@ export default function Dashboard() {
               >
                 {theme === 'dark' ? '☀️' : '🌙'}
               </button>
-              <button onClick={handleLogout} className="text-xs text-slate-500 hover:text-slate-800 underline">Logout</button>
+              {user ? (
+                <div className="flex items-center gap-2">
+                  <span className="hidden sm:inline text-[10px] text-slate-400 font-mono font-semibold max-w-[120px] truncate">{user.email}</span>
+                  <button onClick={handleLogout} className="text-xs text-slate-500 hover:text-slate-800 underline font-semibold cursor-pointer">Logout</button>
+                </div>
+              ) : (
+                <button 
+                  onClick={() => { triggerHaptic(); setGuestMode(false); }} 
+                  className="text-xs font-bold text-[#C54B8C] hover:underline bg-[#FFCFF1]/40 border border-[#C54B8C]/20 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer"
+                >
+                  Sign In / Register
+                </button>
+              )}
             </div>
           </div>
 
@@ -1264,11 +1362,62 @@ export default function Dashboard() {
             : 'bg-white border-slate-200 text-slate-800'
         }`}>
           {!formData ? (
-            <div className={`h-full flex flex-col items-center justify-center py-10 text-center px-4 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-              <div className="text-4xl mb-4 opacity-50">🏷️</div>
-              <p className="mb-12 font-medium">Select a tag on the left to edit its information.</p>
-              
-              <div className={`p-6 rounded-xl max-w-md text-left border transition-colors ${
+            <div className="max-w-2xl mx-auto py-4 space-y-6 animate-fade-in">
+              <div className="bg-gradient-to-tr from-[#051650] via-[#0A2472] to-[#C54B8C] p-6 sm:p-8 rounded-3xl text-white shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-[#FFCFF1]/10 rounded-bl-full pointer-events-none"></div>
+                <div className="space-y-4">
+                  <div className="inline-flex items-center gap-2 bg-[#FFCFF1]/20 border border-[#FFCFF1]/30 px-3 py-1 rounded-full text-[#FFCFF1] text-xs font-bold uppercase tracking-wider">
+                    <span>🏷️</span> LoTap Wristband Setup
+                  </div>
+                  <h2 className="text-2xl sm:text-3xl font-black font-serif text-[#FFCFF1]">Set Up Your Child Safety Profile</h2>
+                  <p className="text-xs sm:text-sm text-slate-100 leading-relaxed max-w-xl">
+                    Every physical LoTap wristband comes pre-printed with a 6-character code (e.g. <strong className="font-mono text-[#FFCFF1]">lt884615</strong>). Enter your wristband code below to claim it and configure Emma or your child's safety profile.
+                  </p>
+
+                  <div className="pt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-[#FFCFF1] mb-1">Wristband Code</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. lt884615"
+                        value={newChildTagCode || 'lt884615'}
+                        onChange={(e) => setNewChildTagCode(e.target.value.toUpperCase().trim())}
+                        className="w-full px-3.5 py-2.5 text-sm font-mono font-bold rounded-xl bg-white/10 border border-white/20 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-[#FFCFF1]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-[#FFCFF1] mb-1">Child's Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Emma"
+                        value={newChildName || 'Emma'}
+                        onChange={(e) => setNewChildName(e.target.value)}
+                        className="w-full px-3.5 py-2.5 text-sm font-semibold rounded-xl bg-white/10 border border-white/20 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-[#FFCFF1]"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic();
+                          const code = newChildTagCode || 'lt884615';
+                          const name = newChildName || 'Emma';
+                          handleAddChildWithCode(code, name);
+                        }}
+                        disabled={modalLoading}
+                        className="w-full py-2.5 px-4 bg-white text-[#051650] hover:bg-[#FFCFF1] hover:text-[#C54B8C] font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <span>🚀</span> {modalLoading ? 'Connecting...' : 'Claim & Start Setup'}
+                      </button>
+                    </div>
+                  </div>
+                  {modalError && (
+                    <p className="text-xs text-rose-200 bg-rose-900/40 p-2.5 rounded-xl border border-rose-400/30 font-semibold">{modalError}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className={`p-6 rounded-2xl border transition-colors ${
                 theme === 'dark' 
                   ? 'bg-slate-950/50 border-white/5' 
                   : 'bg-slate-50 border-slate-200'
