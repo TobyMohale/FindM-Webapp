@@ -145,8 +145,6 @@ export default function Dashboard() {
     }
   }, [location.pathname]);
 
-  const [guestMode, setGuestMode] = useState(true);
-
   useEffect(() => {
     const loadData = async () => {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
@@ -163,20 +161,6 @@ export default function Dashboard() {
         if (currentUser.email) {
           await fetchUserOrders(currentUser.email);
         }
-      } else {
-        const defaultGuestTag = {
-          tag_id: 'lt456087',
-          owner_id: 'guest',
-          child_name: 'Emma',
-          avatar: '🧒',
-          parent_whatsapp: '',
-          contacts: [],
-          medical: { allergies: '', conditions: '', notes: '' },
-          emergency_mode: false,
-          claimed_at: new Date().toISOString()
-        };
-        setTags([defaultGuestTag]);
-        loadTagForEdit(defaultGuestTag);
       }
     };
     loadData();
@@ -575,8 +559,17 @@ export default function Dashboard() {
     setAuthLoading(false);
   };
 
-  const handleFinishOnboarding = () => {
-    window.location.href = '/dashboard';
+  const handleFinishOnboarding = async () => {
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (currentUser) {
+      setUser(currentUser);
+      await fetchUserTags(currentUser.id);
+      if (currentUser.email) {
+        await fetchUserOrders(currentUser.email);
+      }
+    } else {
+      window.location.reload();
+    }
   };
 
   const handleClaimTag = async () => {
@@ -758,23 +751,12 @@ export default function Dashboard() {
     }
     setUser(null);
     setOrders([]);
-    setGuestMode(true);
-    const defaultGuestTag = {
-      tag_id: 'lt456087',
-      owner_id: 'guest',
-      child_name: 'Emma',
-      avatar: '🧒',
-      parent_whatsapp: '',
-      contacts: [],
-      medical: { allergies: '', conditions: '', notes: '' },
-      emergency_mode: false,
-      claimed_at: new Date().toISOString()
-    };
-    setTags([defaultGuestTag]);
-    loadTagForEdit(defaultGuestTag);
+    setTags([]);
+    setActiveTagId(null);
+    setFormData(null);
   };
 
-  if (!user && !guestMode) {
+  if (!user) {
     return (
       <div className="min-h-[calc(100vh-64px)] bg-[#FDFBF7] flex items-center justify-center p-4 relative overflow-hidden">
         {/* Morphing Liquid Background Blobs */}
@@ -1235,18 +1217,20 @@ export default function Dashboard() {
               >
                 {theme === 'dark' ? '☀️' : '🌙'}
               </button>
-              {user ? (
-                <div className="flex items-center gap-2">
-                  <span className="hidden sm:inline text-[10px] text-slate-400 font-mono font-semibold max-w-[120px] truncate">{user.email}</span>
-                  <button onClick={handleLogout} className="text-xs text-slate-500 hover:text-slate-800 underline font-semibold cursor-pointer">Logout</button>
+              {user && (
+                <div className="flex items-center gap-2.5">
+                  <span className="hidden sm:inline text-xs text-slate-400 font-mono font-medium max-w-[140px] truncate">{user.email}</span>
+                  <button 
+                    onClick={handleLogout} 
+                    className={`text-xs font-bold px-3 py-1.5 rounded-xl transition-all border cursor-pointer flex items-center gap-1.5 shadow-sm ${
+                      theme === 'dark'
+                        ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-[#051650]'
+                    }`}
+                  >
+                    <span>🚪</span> Logout
+                  </button>
                 </div>
-              ) : (
-                <button 
-                  onClick={() => { triggerHaptic(); setGuestMode(false); }} 
-                  className="text-xs font-bold text-[#C54B8C] hover:underline bg-[#FFCFF1]/40 border border-[#C54B8C]/20 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer"
-                >
-                  Sign In / Register
-                </button>
               )}
             </div>
           </div>
