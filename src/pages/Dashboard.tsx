@@ -647,7 +647,7 @@ export default function Dashboard() {
       // Trigger signup/claim notification email (Parent Welcome + Admin Alert)
       if (user?.email) {
         try {
-          fetch('/api/notify/signup', {
+          await fetch('/api/notify/signup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -656,7 +656,7 @@ export default function Dashboard() {
               child_name: childName || 'Child Profile',
               tag_id: cleanTagId.toUpperCase()
             })
-          }).catch(err => console.warn("Claim email notification error:", err));
+          });
         } catch (emailErr) {
           console.warn("Claim email exception:", emailErr);
         }

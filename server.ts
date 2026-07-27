@@ -109,13 +109,36 @@ function getResendClient() {
   return resendInstance;
 }
 
+export const app = express();
+const PORT = 3000;
+
+// Middleware to parse JSON bodies & handle CORS
+app.use(express.json());
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+// Normalize request URLs for Netlify serverless function redirects
+app.use((req, res, next) => {
+  if (req.url.startsWith('/.netlify/functions/api')) {
+    req.url = req.url.replace('/.netlify/functions/api', '/api');
+  }
+  if (req.url.startsWith('/notify/')) {
+    req.url = '/api' + req.url;
+  }
+  if (req.url === '/resend-status') {
+    req.url = '/api/resend-status';
+  }
+  next();
+});
+
 async function startServer() {
-  const app = express();
-  const PORT = 3000;
-
-  // Middleware to parse JSON bodies
-  app.use(express.json());
-
   // API route to get current Resend configuration status
   app.get("/api/resend-status", (req, res) => {
     const hasKey = Boolean(process.env.RESEND_API_KEY);
@@ -936,4 +959,6 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.NETLIFY && !process.env.LAMBDA_TASK_ROOT && !process.env.AWS_EXECUTION_ENV) {
+  startServer();
+}

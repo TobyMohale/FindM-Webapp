@@ -55,11 +55,10 @@ export default function Home() {
       if (error) {
         setSubmitMessage('Error submitting order: ' + error.message);
       } else {
-        setSubmitMessage('Thank you! Your order has been placed successfully. A confirmation email has been sent, and our team will process dispatch.');
-
+        let emailNote = '';
         // Trigger order notification email (Client + Admin)
         try {
-          fetch('/api/notify/order', {
+          const res = await fetch('/api/notify/order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -71,10 +70,15 @@ export default function Home() {
               size: formData.size,
               shipping_address: formData.address
             })
-          }).catch(err => console.warn("Order notification trigger error:", err));
+          });
+          if (res.ok) {
+            emailNote = ' A confirmation email has been sent to ' + (formData.email || 'your email') + '.';
+          }
         } catch (emailErr) {
           console.warn("Order email exception:", emailErr);
         }
+
+        setSubmitMessage(`Thank you! Your order has been placed successfully.${emailNote} Our team will process dispatch.`);
 
         setFormData({
           name: '',
