@@ -90,6 +90,8 @@ export default function Admin() {
   const [updatingOrderStatus, setUpdatingOrderStatus] = useState<Record<string, boolean>>({});
   const [copiedRecords, setCopiedRecords] = useState<Record<string, boolean>>({});
   const [resendStatus, setResendStatus] = useState<{ configured: boolean; fromEmail: string } | null>(null);
+  const [resettingData, setResettingData] = useState(false);
+  const [resetMessage, setResetMessage] = useState('');
 
   const handleCopy = (key: string, text: string) => {
     try {
@@ -401,6 +403,56 @@ export default function Admin() {
     }
   };
 
+  const handleResetTestData = async () => {
+    const confirmed = window.confirm(
+      "Are you sure you want to reset for fresh testing?\n\nThis will:\n1. Unclaim all generated tags (clear owner_id on all tags).\n2. Delete all customer test orders.\n3. Delete all parent child profiles.\n\nAll generated tag IDs will be preserved as unclaimed and ready for new test claims!"
+    );
+    if (!confirmed) return;
+
+    setResettingData(true);
+    setResetMessage('');
+    triggerHaptic();
+
+    try {
+      // 1. Reset all tags to unclaimed (owner_id = null, child_name = null)
+      const { error: tagErr } = await supabase
+        .from('tags')
+        .update({ owner_id: null, child_name: null, is_claimed: false })
+        .neq('tag_id', '');
+
+      if (tagErr) console.warn("Tag reset error:", tagErr);
+
+      // 2. Clear test orders table
+      const { error: orderErr } = await supabase
+        .from('orders')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+
+      if (orderErr) console.warn("Orders reset error:", orderErr);
+
+      // 3. Clear profiles table if present
+      try {
+        await supabase
+          .from('profiles')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000');
+      } catch (e) {
+        console.warn("Profiles reset exception:", e);
+      }
+
+      // Refetch data
+      await fetchTagsList();
+      await fetchOrders();
+      await fetchMetrics();
+
+      setResetMessage("✅ System successfully reset! All generated tags are now unclaimed, and test orders/profiles have been cleared. Ready for fresh testing!");
+    } catch (err: any) {
+      alert("Error resetting test data: " + (err.message || err));
+    } finally {
+      setResettingData(false);
+    }
+  };
+
   const handleExportCSV = () => {
     if (generatedBatch.length === 0) return;
     const baseUrl = 'https://lotap.co.za';
@@ -616,16 +668,33 @@ export default function Admin() {
           </div>
         </button>
 
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-2 bg-rose-50 text-rose-600 hover:bg-rose-100 px-4 py-2 rounded-xl font-bold uppercase tracking-wider text-[11px] transition-all cursor-pointer shadow-sm border border-rose-100"
-        >
-          <span>🚪</span> Log Out
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleResetTestData}
+            disabled={resettingData}
+            className="flex items-center gap-1.5 bg-amber-50 text-amber-900 hover:bg-amber-100 px-3.5 py-2 rounded-xl font-bold uppercase tracking-wider text-[11px] transition-all cursor-pointer shadow-sm border border-amber-200 disabled:opacity-50"
+            title="Reset system for fresh testing: unclaims all tags and clears test orders"
+          >
+            <span>🔄</span> {resettingData ? 'Resetting...' : 'Reset System Test Data'}
+          </button>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 bg-rose-50 text-rose-600 hover:bg-rose-100 px-4 py-2 rounded-xl font-bold uppercase tracking-wider text-[11px] transition-all cursor-pointer shadow-sm border border-rose-100"
+          >
+            <span>🚪</span> Log Out
+          </button>
+        </div>
       </div>
 
-      <h1 className="text-2xl font-bold text-[#051650] mb-2">Internal Admin: Batch Generation</h1>
-      <p className="text-sm text-slate-500 mb-8">Generate unique tag IDs for factory production. Self-service tool.</p>
+      <h1 className="text-2xl font-bold text-[#051650] mb-2">Internal Admin: Batch Generation & Management</h1>
+      <p className="text-sm text-slate-500 mb-8">Generate unique tag IDs for factory production and manage live system claims & customer orders.</p>
+
+      {resetMessage && (
+        <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-xs font-bold flex items-center justify-between shadow-xs">
+          <span>{resetMessage}</span>
+          <button onClick={() => setResetMessage('')} className="text-emerald-700 hover:text-emerald-950 text-sm font-black ml-4 cursor-pointer">✕</button>
+        </div>
+      )}
       
       {/* Metrics Section with Unlimited Capacity Box */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-8">
