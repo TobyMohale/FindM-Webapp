@@ -17,6 +17,57 @@ const triggerHaptic = () => {
   }
 };
 
+export const findTagInDatabase = async (inputCode: string) => {
+  const clean = inputCode.trim().toLowerCase();
+  if (!clean) return null;
+
+  const variations = Array.from(new Set([
+    clean,
+    clean.toUpperCase(),
+    clean.replace(/^lt/i, ''),
+    clean.replace(/^lt/i, '').toUpperCase(),
+    clean.startsWith('lt') ? clean : 'lt' + clean,
+    clean.startsWith('lt') ? clean.toUpperCase() : ('lt' + clean).toUpperCase()
+  ]));
+
+  // 1. RPC lookups (SECURITY DEFINER bypasses RLS for checking public tag code status)
+  for (const v of variations) {
+    try {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('get_public_tag', { p_tag_id: v });
+      if (!rpcErr && rpcData) {
+        const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+        if (row && (row.tag_id || row.id)) {
+          return {
+            ...row,
+            tag_id: row.tag_id || row.id
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('RPC lookup exception for variation', v, e);
+    }
+  }
+
+  // 2. Direct ilike table lookup
+  for (const v of variations) {
+    try {
+      const { data, error } = await supabase
+        .from('tags')
+        .select('*')
+        .ilike('tag_id', v)
+        .maybeSingle();
+
+      if (!error && data) {
+        return data;
+      }
+    } catch (e) {
+      console.warn('Direct table lookup exception for variation', v, e);
+    }
+  }
+
+  return null;
+};
+
 const generate30DayScanData = (totalScans: number, tagId: string) => {
   const data = [];
   const now = new Date();
@@ -201,13 +252,14 @@ export default function Dashboard() {
       }
       return data;
     } else {
-      // User has no saved tags in DB yet. Initialize setup profile template in local state
+      // User has no saved tags in DB yet. Initialize setup profile template in local state using registered name
+      const fallbackName = childName.trim() || 'My Child';
       const defaultTag = {
-        tag_id: 'lt456087',
+        tag_id: registeredTagId || (signupTagId ? signupTagId.toLowerCase() : ('lt' + Math.floor(100000 + Math.random() * 900000).toString())),
         owner_id: userId,
-        child_name: 'Emma',
+        child_name: fallbackName,
         avatar: '🧒',
-        parent_whatsapp: '',
+        parent_whatsapp: parentPhone.trim() || '',
         contacts: [],
         medical: { allergies: '', conditions: '', notes: '' },
         emergency_mode: false,
@@ -221,7 +273,10 @@ export default function Dashboard() {
 
   const handleAddChildWithCode = async (codeOverride?: string, nameOverride?: string) => {
     const cleanTagId = (codeOverride !== undefined ? codeOverride : newChildTagCode).trim().toLowerCase();
-    if (!cleanTagId) return;
+    if (!cleanTagId) {
+      setModalError('Please enter a valid wristband tag code.');
+      return;
+    }
     
     if (cleanTagId.length < 3 || cleanTagId.length > 12) {
       setModalError('Wristband Tag Code must be between 3 and 12 characters.');
@@ -238,18 +293,10 @@ export default function Dashboard() {
         return;
       }
 
-      const targetChildName = nameOverride !== undefined ? nameOverride : (newChildName || 'Emma');
+      const targetChildName = (nameOverride !== undefined ? nameOverride : newChildName).trim() || childName.trim() || 'My Child';
 
       // 1. Check if tag exists in database
-      const { data: existingTag, error: checkErr } = await supabase
-        .from('tags')
-        .select('*')
-        .ilike('tag_id', cleanTagId)
-        .maybeSingle();
-
-      if (checkErr) {
-        console.warn('Tag query error:', checkErr);
-      }
+      const existingTag = await findTagInDatabase(cleanTagId);
 
       if (existingTag) {
         if (existingTag.owner_id && existingTag.owner_id !== user.id) {
@@ -261,7 +308,7 @@ export default function Dashboard() {
         // Claim existing tag
         const { error: claimErr } = await supabase.rpc('claim_tag', {
           p_tag_id: existingTag.tag_id,
-          p_child_name: targetChildName || existingTag.child_name || 'Emma',
+          p_child_name: targetChildName || existingTag.child_name || 'My Child',
           p_avatar: existingTag.avatar || '🧒',
           p_parent_whatsapp: parentPhone || existingTag.parent_whatsapp || '',
           p_contacts: existingTag.contacts || [],
@@ -272,7 +319,7 @@ export default function Dashboard() {
           // Direct fallback update
           const { error: updateErr } = await supabase.from('tags').update({
             owner_id: user.id,
-            child_name: targetChildName || existingTag.child_name || 'Emma',
+            child_name: targetChildName || existingTag.child_name || 'My Child',
             parent_whatsapp: parentPhone || existingTag.parent_whatsapp || '',
             claimed_at: new Date().toISOString()
           }).eq('tag_id', existingTag.tag_id);
@@ -287,7 +334,7 @@ export default function Dashboard() {
         // Tag does not exist in database yet -> Claim via RPC or fallback insert
         const { error: claimErr } = await supabase.rpc('claim_tag', {
           p_tag_id: cleanTagId,
-          p_child_name: targetChildName || 'Emma',
+          p_child_name: targetChildName,
           p_avatar: '🧒',
           p_parent_whatsapp: parentPhone || '',
           p_contacts: [],
@@ -298,7 +345,7 @@ export default function Dashboard() {
           const newProfile = {
             tag_id: cleanTagId,
             owner_id: user.id,
-            child_name: targetChildName || 'Emma',
+            child_name: targetChildName,
             avatar: '🧒',
             parent_whatsapp: parentPhone || '',
             contacts: [],
@@ -323,7 +370,7 @@ export default function Dashboard() {
           body: JSON.stringify({
             parent_email: user.email,
             parent_phone: parentPhone || '',
-            child_name: targetChildName || 'Emma',
+            child_name: targetChildName,
             tag_id: cleanTagId.toUpperCase()
           })
         }).catch(err => console.warn("Signup email error:", err));
@@ -338,7 +385,6 @@ export default function Dashboard() {
           loadTagForEdit(updatedTags[0]);
         }
       }
-
       setShowAddChildModal(false);
       setNewChildTagCode('');
       setNewChildName('');
@@ -443,31 +489,26 @@ export default function Dashboard() {
       return;
     }
 
-    const cleanTag = signupTagId.trim().toLowerCase();
-    if (cleanTag) {
+    const rawTag = signupTagId.trim();
+    if (rawTag) {
       setAuthLoading(true);
       setAuthMsg('');
       try {
-        const { data: tagRow, error: tagErr } = await supabase
-          .from('tags')
-          .select('tag_id, owner_id')
-          .eq('tag_id', cleanTag)
-          .maybeSingle();
+        const tagRow = await findTagInDatabase(rawTag);
 
         setAuthLoading(false);
 
-        if (tagErr) {
-          console.warn('Error validating tag code:', tagErr);
-        }
-
-        if (!tagRow) {
-          setAuthMsg("We couldn't find that code. Please check it and try again, or contact support.");
-          return;
-        }
-
-        if (tagRow.owner_id) {
-          setAuthMsg("This code has already been registered. If you believe this is a mistake, please contact support.");
-          return;
+        if (tagRow) {
+          if (tagRow.owner_id) {
+            setAuthMsg("This code has already been registered. If you believe this is a mistake, please contact support.");
+            return;
+          }
+          setSignupTagId(tagRow.tag_id);
+        } else {
+          if (rawTag.length < 4) {
+            setAuthMsg("Code looks too short. Please check the 6-character code on your physical wristband.");
+            return;
+          }
         }
       } catch (err: any) {
         setAuthLoading(false);
@@ -520,27 +561,66 @@ export default function Dashboard() {
     }
 
     const newTagId = signupTagId.trim().toLowerCase() || ('lt' + Math.floor(100000 + Math.random() * 900000).toString());
+    const finalChildName = childName.trim() || 'My Child';
 
-    // Call atomic claim_tag RPC function
+    // 2. Attempt auto-login to establish session
+    let activeUserId = registeredUser.id;
     try {
-      const { error: claimErr } = await supabase.rpc('claim_tag', {
+      const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+        email: email.toLowerCase().trim(),
+        password
+      });
+      if (signInData?.user) {
+        activeUserId = signInData.user.id;
+        setUser(signInData.user);
+      }
+    } catch (err) {
+      console.warn('Auto-login exception:', err);
+    }
+
+    // 3. Claim tag via RPC
+    try {
+      await supabase.rpc('claim_tag', {
         p_tag_id: newTagId,
-        p_child_name: childName || 'Child',
+        p_child_name: finalChildName,
         p_avatar: '🧒',
-        p_parent_whatsapp: parentPhone || '',
+        p_parent_whatsapp: parentPhone.trim() || '',
         p_contacts: [],
         p_medical: { allergies: '', conditions: '', notes: '' }
       });
-
-      if (claimErr) {
-        setAuthMsg('Failed to initialize tag: ' + claimErr.message);
-        setAuthLoading(false);
-        return;
-      }
     } catch (err) {
-      console.warn('Error creating child tag profile on signup:', err);
+      console.warn('claim_tag RPC warning on signup:', err);
     }
 
+    // 4. Perform direct update/upsert on tags table to ensure owner_id, child_name, parent_whatsapp are saved
+    try {
+      const { error: tagUpdateErr } = await supabase.from('tags').update({
+        owner_id: activeUserId,
+        child_name: finalChildName,
+        parent_whatsapp: parentPhone.trim() || '',
+        is_claimed: true,
+        claimed_at: new Date().toISOString()
+      }).ilike('tag_id', newTagId);
+
+      if (tagUpdateErr || !tagUpdateErr) {
+        // Fallback upsert if tag row doesn't exist yet
+        await supabase.from('tags').upsert([{
+          tag_id: newTagId,
+          owner_id: activeUserId,
+          child_name: finalChildName,
+          parent_whatsapp: parentPhone.trim() || '',
+          avatar: '🧒',
+          contacts: [],
+          medical: { allergies: '', conditions: '', notes: '' },
+          is_claimed: true,
+          claimed_at: new Date().toISOString()
+        }], { onConflict: 'tag_id' });
+      }
+    } catch (err) {
+      console.warn('Direct tag update exception on signup:', err);
+    }
+
+    // 5. Send notification email
     try {
       await fetch('/api/notify/signup', {
         method: 'POST',
@@ -548,7 +628,7 @@ export default function Dashboard() {
         body: JSON.stringify({
           parent_email: email,
           parent_phone: parentPhone,
-          child_name: childName || 'Child',
+          child_name: finalChildName,
           tag_id: newTagId
         })
       });
@@ -556,19 +636,6 @@ export default function Dashboard() {
       console.warn('Failed to trigger signup notification email:', err);
     }
     
-    // Attempt auto-login
-    try {
-      const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
-        email: email.toLowerCase().trim(),
-        password
-      });
-      if (signInErr) {
-        console.warn('Auto-login after signup failed:', signInErr);
-      }
-    } catch (err) {
-      console.warn('Auto-login exception:', err);
-    }
-
     setRegisteredTagId(newTagId);
     setSignUpStep(3);
     setAuthLoading(false);
@@ -603,24 +670,10 @@ export default function Dashboard() {
       }
 
       // Check if tag exists in database
-      const { data: tagRow, error: checkError } = await supabase
-        .from('tags')
-        .select('tag_id, owner_id')
-        .eq('tag_id', cleanTagId)
-        .maybeSingle();
+      const tagRow = await findTagInDatabase(cleanTagId);
 
-      if (checkError) {
-        console.warn('Tag check error:', checkError);
-      }
-
-      if (!tagRow) {
-        alert("We couldn't find that code. Please check it and try again, or contact support.");
-        setSaving(false);
-        return;
-      }
-
-      if (tagRow.owner_id && tagRow.owner_id !== user.id) {
-        alert("This code has already been registered. If you believe this is a mistake, please contact support.");
+      if (tagRow && tagRow.owner_id && tagRow.owner_id !== user.id) {
+        alert("This code has already been registered to another account. If you believe this is a mistake, please contact support.");
         setSaving(false);
         return;
       }
@@ -1370,7 +1423,7 @@ export default function Dashboard() {
                   </div>
                   <h2 className="text-2xl sm:text-3xl font-black font-serif text-[#FFCFF1]">Set Up Your Child Safety Profile</h2>
                   <p className="text-xs sm:text-sm text-slate-100 leading-relaxed max-w-xl">
-                    Every physical LoTap wristband comes pre-printed with a 6-character code (e.g. <strong className="font-mono text-[#FFCFF1]">lt884615</strong>). Enter your wristband code below to claim it and configure Emma or your child's safety profile.
+                    Every physical LoTap wristband comes pre-printed with a 6-character code (e.g. <strong className="font-mono text-[#FFCFF1]">lt884615</strong>). Enter your wristband code below to claim it and configure your child's safety profile.
                   </p>
 
                   <div className="pt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1379,7 +1432,7 @@ export default function Dashboard() {
                       <input
                         type="text"
                         placeholder="e.g. lt884615"
-                        value={newChildTagCode || 'lt884615'}
+                        value={newChildTagCode}
                         onChange={(e) => setNewChildTagCode(e.target.value.toUpperCase().trim())}
                         className="w-full px-3.5 py-2.5 text-sm font-mono font-bold rounded-xl bg-white/10 border border-white/20 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-[#FFCFF1]"
                       />
@@ -1388,8 +1441,8 @@ export default function Dashboard() {
                       <label className="block text-[10px] font-extrabold uppercase tracking-wider text-[#FFCFF1] mb-1">Child's Name</label>
                       <input
                         type="text"
-                        placeholder="e.g. Emma"
-                        value={newChildName || 'Emma'}
+                        placeholder="e.g. Child's Name"
+                        value={newChildName}
                         onChange={(e) => setNewChildName(e.target.value)}
                         className="w-full px-3.5 py-2.5 text-sm font-semibold rounded-xl bg-white/10 border border-white/20 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-[#FFCFF1]"
                       />
@@ -1399,8 +1452,8 @@ export default function Dashboard() {
                         type="button"
                         onClick={() => {
                           triggerHaptic();
-                          const code = newChildTagCode || 'lt884615';
-                          const name = newChildName || 'Emma';
+                          const code = newChildTagCode;
+                          const name = newChildName.trim() || childName.trim() || 'My Child';
                           handleAddChildWithCode(code, name);
                         }}
                         disabled={modalLoading}
@@ -1997,7 +2050,7 @@ export default function Dashboard() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Emma"
+                  placeholder="e.g. Sfiso"
                   value={newChildName}
                   onChange={(e) => setNewChildName(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-sm font-semibold rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-white/20 text-[#051650] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#C54B8C] placeholder:font-normal placeholder:text-slate-400"
