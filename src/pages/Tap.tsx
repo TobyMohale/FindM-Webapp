@@ -29,7 +29,7 @@ const getBrowserLanguage = (): LangCode => {
 export default function TapView() {
   const { tagId } = useParams<{ tagId: string }>();
   const navigate = useNavigate();
-  const [lang, setLang] = useState<LangCode>(getBrowserLanguage());
+  const [lang, setLang] = useState<LangCode>('en');
   const [record, setRecord] = useState<any>(null);
   const [parentProfile, setParentProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
