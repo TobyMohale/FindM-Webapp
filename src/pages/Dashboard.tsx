@@ -653,35 +653,7 @@ export default function Dashboard() {
       console.warn('claim_tag RPC warning on signup:', err);
     }
 
-    // 4. Perform direct update/upsert on tags table to ensure owner_id, child_name, parent_whatsapp are saved
-    try {
-      const { error: tagUpdateErr } = await supabase.from('tags').update({
-        owner_id: activeUserId,
-        child_name: finalChildName,
-        parent_whatsapp: parentPhone.trim() || '',
-        is_claimed: true,
-        claimed_at: new Date().toISOString()
-      }).ilike('tag_id', newTagId);
-
-      if (tagUpdateErr || !tagUpdateErr) {
-        // Fallback upsert if tag row doesn't exist yet
-        await supabase.from('tags').upsert([{
-          tag_id: newTagId,
-          owner_id: activeUserId,
-          child_name: finalChildName,
-          parent_whatsapp: parentPhone.trim() || '',
-          avatar: '🧒',
-          contacts: [],
-          medical: { allergies: '', conditions: '', notes: '' },
-          is_claimed: true,
-          claimed_at: new Date().toISOString()
-        }], { onConflict: 'tag_id' });
-      }
-    } catch (err) {
-      console.warn('Direct tag update exception on signup:', err);
-    }
-
-    // 5. Send notification email
+    // 4. Send notification email
     try {
       await fetch('/api/notify/signup', {
         method: 'POST',
@@ -813,11 +785,17 @@ export default function Dashboard() {
 
   const handleSave = async () => {
     if (!activeTagId || !formData) return;
+
+    if (!formData.child_name || !formData.child_name.trim()) {
+      alert('Please enter the child\'s name before saving.');
+      return;
+    }
+
     setSaving(true);
     
     // Clean up base payload matching standard Supabase tags table columns
     const basePayload = {
-      child_name: formData.child_name || 'Emma',
+      child_name: formData.child_name.trim(),
       avatar: formData.avatar || '🧒',
       parent_whatsapp: formData.parent_whatsapp || '',
       contacts: Array.isArray(formData.contacts) ? formData.contacts : [],

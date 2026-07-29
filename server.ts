@@ -138,8 +138,7 @@ app.use((req, res, next) => {
   next();
 });
 
-async function startServer() {
-  // API route to get current Resend configuration status
+// API route to get current Resend configuration status
   app.get("/api/resend-status", (req, res) => {
     const hasKey = Boolean(process.env.RESEND_API_KEY);
     const rawFromEmail = process.env.RESEND_FROM_EMAIL;
@@ -939,6 +938,7 @@ async function startServer() {
 
 
 
+async function startServer() {
   // Serve static files / Vite middleware
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
