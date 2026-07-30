@@ -112,6 +112,20 @@ export default function TapView() {
           }
         }
 
+        // 3. Fallback attempt via Server API endpoint (uses service role key)
+        if (!tagData) {
+          try {
+            const apiRes = await fetch(`/api/tags/get/${cleanTagId}`);
+            const apiData = await apiRes.json();
+            if (apiData && apiData.success && apiData.tag) {
+              tagData = apiData.tag;
+              isClaimed = !!tagData.owner_id || (tagData.child_name && tagData.child_name.trim().length > 0);
+            }
+          } catch (e) {
+            console.warn('Server API tag lookup failed:', e);
+          }
+        }
+
         // 3. Process the tag result
         if (tagData) {
           if (!isClaimed) {

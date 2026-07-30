@@ -252,13 +252,32 @@ export default function Dashboard() {
   };
 
   const fetchUserTags = async (userId: string) => {
-    const { data } = await supabase.from('tags').select('*').eq('owner_id', userId);
-    if (data && data.length > 0) {
-      setTags(data);
-      if (!activeTagId || !data.some((t: any) => t.tag_id === activeTagId)) {
-        loadTagForEdit(data[0]);
+    let tagsList: any[] = [];
+    try {
+      // 1. Try server API route (bypasses RLS)
+      const res = await fetch(`/api/tags/user/${userId}`);
+      const apiData = await res.json();
+      if (apiData && apiData.success && Array.isArray(apiData.tags) && apiData.tags.length > 0) {
+        tagsList = apiData.tags;
       }
-      return data;
+    } catch (e) {
+      console.warn('Server user tags fetch warning:', e);
+    }
+
+    if (tagsList.length === 0) {
+      // 2. Fallback to client Supabase query
+      const { data } = await supabase.from('tags').select('*').eq('owner_id', userId);
+      if (data && data.length > 0) {
+        tagsList = data;
+      }
+    }
+
+    if (tagsList.length > 0) {
+      setTags(tagsList);
+      if (!activeTagId || !tagsList.some((t: any) => t.tag_id.toLowerCase() === activeTagId.toLowerCase())) {
+        loadTagForEdit(tagsList[0]);
+      }
+      return tagsList;
     } else {
       // User has no saved tags in DB yet. Initialize setup profile template in local state using registered name
       const fallbackName = childName.trim() || 'My Child';
@@ -829,9 +848,29 @@ export default function Dashboard() {
       emergency_mode: emergencyMode
     };
 
-    if (user) {
+    let savedTagFromApi: any = null;
+
+    try {
+      // 1. Primary update method: Call server API route (bypasses RLS with service role key)
+      const saveRes = await fetch('/api/tags/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...basePayload,
+          owner_id: user?.id || null
+        })
+      });
+      const saveResult = await saveRes.json();
+      if (saveResult && saveResult.success && saveResult.tag) {
+        savedTagFromApi = saveResult.tag;
+      }
+    } catch (e) {
+      console.warn('Server API tag save error:', e);
+    }
+
+    if (user && !savedTagFromApi) {
       try {
-        // 1. Primary update method: update_child_profile RPC (security definer)
+        // Fallback 1: update_child_profile RPC (security definer)
         const { error: rpcErr } = await supabase.rpc('update_child_profile', {
           p_tag_id: basePayload.tag_id,
           p_child_name: basePayload.child_name,
@@ -845,7 +884,7 @@ export default function Dashboard() {
         if (rpcErr) {
           console.warn('update_child_profile RPC failed, trying claim_tag / direct fallback:', rpcErr.message);
 
-          // 2. Fallback claim_tag RPC
+          // Fallback 2: claim_tag RPC
           await supabase.rpc('claim_tag', {
             p_tag_id: basePayload.tag_id,
             p_child_name: basePayload.child_name,
@@ -855,7 +894,7 @@ export default function Dashboard() {
             p_medical: basePayload.medical
           });
 
-          // 3. Fallback direct table upsert
+          // Fallback 3: direct table upsert
           await supabase.from('tags').upsert({
             tag_id: basePayload.tag_id,
             owner_id: user.id,
@@ -868,21 +907,19 @@ export default function Dashboard() {
             claimed_at: new Date().toISOString()
           });
         }
-
-        // Re-fetch tags from database to keep tags list updated, without resetting the active edit form
-        const reFetched = await supabase.from('tags').select('*').eq('owner_id', user.id);
-        if (reFetched.data && reFetched.data.length > 0) {
-          setTags(reFetched.data);
-        }
       } catch (err: any) {
-        console.warn('Catch error on save:', err);
+        console.warn('Catch error on fallback save:', err);
       }
     }
 
-    // Retain full updated state in current editing session and tags list
-    const updatedState = { ...formData, ...basePayload };
-    setFormData(updatedState);
-    setTags(prev => prev.map(t => t.tag_id.toLowerCase() === cleanTagCode ? { ...t, ...updatedState } : t));
+    if (user) {
+      await fetchUserTags(user.id);
+    }
+
+    // Apply exact saved state to form and active tags list
+    const finalState = savedTagFromApi || { ...formData, ...basePayload };
+    loadTagForEdit(finalState);
+    setTags(prev => prev.map(t => t.tag_id.toLowerCase() === cleanTagCode ? finalState : t));
     
     setSaving(false);
 

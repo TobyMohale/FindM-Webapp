@@ -717,6 +717,146 @@ app.use((req, res, next) => {
     }
   });
 
+  // Save tag profile API endpoint (uses supabaseAdmin service role key to bypass RLS)
+  app.post("/api/tags/save", async (req, res) => {
+    try {
+      const {
+        tag_id,
+        owner_id,
+        child_name,
+        avatar,
+        parent_whatsapp,
+        contacts,
+        medical,
+        emergency_mode
+      } = req.body;
+
+      if (!tag_id) {
+        return res.status(400).json({ error: "tag_id is required" });
+      }
+
+      const cleanTagCode = tag_id.toString().trim().toLowerCase();
+      const clientToUse = supabaseAdmin || createClient(
+        supabaseUrl,
+        process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''
+      );
+
+      // Check if tag already exists in PostgreSQL tags table
+      const { data: existingTag } = await clientToUse
+        .from('tags')
+        .select('*')
+        .ilike('tag_id', cleanTagCode)
+        .maybeSingle();
+
+      const contactsArray = Array.isArray(contacts)
+        ? contacts
+        : (existingTag?.contacts || []);
+
+      const medicalObject = (medical && typeof medical === 'object')
+        ? {
+            allergies: (medical.allergies || '').toString().trim(),
+            conditions: (medical.conditions || '').toString().trim(),
+            notes: (medical.notes || '').toString().trim()
+          }
+        : (existingTag?.medical || { allergies: '', conditions: '', notes: '' });
+
+      const payload: any = {
+        tag_id: cleanTagCode,
+        child_name: (child_name || existingTag?.child_name || 'My Child').toString().trim(),
+        avatar: avatar || existingTag?.avatar || '🧒',
+        parent_whatsapp: (parent_whatsapp !== undefined ? parent_whatsapp : (existingTag?.parent_whatsapp || '')).toString().trim(),
+        contacts: contactsArray,
+        medical: medicalObject,
+        emergency_mode: emergency_mode !== undefined ? !!emergency_mode : (existingTag?.emergency_mode || false),
+        claimed_at: existingTag?.claimed_at || new Date().toISOString()
+      };
+
+      if (owner_id) {
+        payload.owner_id = owner_id;
+      } else if (existingTag?.owner_id) {
+        payload.owner_id = existingTag.owner_id;
+      }
+
+      if (existingTag) {
+        const { data, error } = await clientToUse
+          .from('tags')
+          .update(payload)
+          .ilike('tag_id', cleanTagCode)
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Server API tags update error:", error);
+          return res.status(500).json({ error: error.message });
+        }
+        return res.json({ success: true, tag: data });
+      } else {
+        const { data, error } = await clientToUse
+          .from('tags')
+          .insert([payload])
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Server API tags insert error:", error);
+          return res.status(500).json({ error: error.message });
+        }
+        return res.json({ success: true, tag: data });
+      }
+    } catch (err: any) {
+      console.error("Server API tags save exception:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get public tag profile API endpoint
+  app.get("/api/tags/get/:tag_id", async (req, res) => {
+    try {
+      const cleanTagCode = req.params.tag_id.trim().toLowerCase();
+      const clientToUse = supabaseAdmin || createClient(
+        supabaseUrl,
+        process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''
+      );
+
+      const { data, error } = await clientToUse
+        .from('tags')
+        .select('*')
+        .ilike('tag_id', cleanTagCode)
+        .maybeSingle();
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+      return res.json({ success: true, tag: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get user tags API endpoint
+  app.get("/api/tags/user/:user_id", async (req, res) => {
+    try {
+      const userId = req.params.user_id.trim();
+      const clientToUse = supabaseAdmin || createClient(
+        supabaseUrl,
+        process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''
+      );
+
+      const { data, error } = await clientToUse
+        .from('tags')
+        .select('*')
+        .eq('owner_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        return res.status(500).json({ error: error.message });
+      }
+      return res.json({ success: true, tags: data || [] });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
   // Send new customer order notification emails (Client Confirmation + Admin Notification)
   app.post("/api/notify/order", async (req, res) => {
     try {
