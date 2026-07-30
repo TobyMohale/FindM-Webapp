@@ -405,8 +405,22 @@ export default function Dashboard() {
   };
 
   const loadTagForEdit = (tag: any) => {
+    if (!tag) return;
     setActiveTagId(tag.tag_id);
-    setFormData(JSON.parse(JSON.stringify(tag)));
+    const copy = JSON.parse(JSON.stringify(tag));
+    if (!Array.isArray(copy.contacts)) {
+      copy.contacts = [];
+    }
+    if (!copy.medical || typeof copy.medical !== 'object') {
+      copy.medical = { allergies: '', conditions: '', notes: '' };
+    } else {
+      copy.medical = {
+        allergies: copy.medical.allergies || '',
+        conditions: copy.medical.conditions || '',
+        notes: copy.medical.notes || ''
+      };
+    }
+    setFormData(copy);
   };
 
   const [resendEmailSuccess, setResendEmailSuccess] = useState(false);
@@ -786,61 +800,89 @@ export default function Dashboard() {
   const handleSave = async () => {
     if (!activeTagId || !formData) return;
 
-    if (!formData.child_name || !formData.child_name.trim()) {
-      alert('Please enter the child\'s name before saving.');
+    const trimmedChildName = (formData.child_name || '').trim();
+    if (!trimmedChildName) {
+      setToastMessage('Please enter a child name before saving.');
       return;
     }
 
     setSaving(true);
     
     // Clean up base payload matching standard Supabase tags table columns
+    const contactsArray = Array.isArray(formData.contacts) ? formData.contacts : [];
+    const medicalObject = {
+      allergies: (formData.medical?.allergies || '').trim(),
+      conditions: (formData.medical?.conditions || '').trim(),
+      notes: (formData.medical?.notes || '').trim()
+    };
+    const emergencyMode = !!formData.emergency_mode;
+
+    const cleanTagCode = activeTagId.toLowerCase().trim();
+
     const basePayload = {
-      child_name: formData.child_name.trim(),
+      tag_id: cleanTagCode,
+      child_name: trimmedChildName,
       avatar: formData.avatar || '🧒',
-      parent_whatsapp: formData.parent_whatsapp || '',
-      contacts: Array.isArray(formData.contacts) ? formData.contacts : [],
-      medical: formData.medical || { allergies: '', conditions: '', notes: '' }
+      parent_whatsapp: (formData.parent_whatsapp || '').trim(),
+      contacts: contactsArray,
+      medical: medicalObject,
+      emergency_mode: emergencyMode
     };
 
     if (user) {
       try {
-        // Attempt atomic claim using claim_tag RPC
-        const { error: claimErr } = await supabase.rpc('claim_tag', {
-          p_tag_id: activeTagId.toLowerCase().trim(),
+        // 1. Primary update method: update_child_profile RPC (security definer)
+        const { error: rpcErr } = await supabase.rpc('update_child_profile', {
+          p_tag_id: basePayload.tag_id,
           p_child_name: basePayload.child_name,
           p_avatar: basePayload.avatar,
           p_parent_whatsapp: basePayload.parent_whatsapp,
           p_contacts: basePayload.contacts,
-          p_medical: basePayload.medical
+          p_medical: basePayload.medical,
+          p_emergency_mode: basePayload.emergency_mode
         });
 
-        if (claimErr) {
-          // Direct fallback update or upsert
+        if (rpcErr) {
+          console.warn('update_child_profile RPC failed, trying claim_tag / direct fallback:', rpcErr.message);
+
+          // 2. Fallback claim_tag RPC
+          await supabase.rpc('claim_tag', {
+            p_tag_id: basePayload.tag_id,
+            p_child_name: basePayload.child_name,
+            p_avatar: basePayload.avatar,
+            p_parent_whatsapp: basePayload.parent_whatsapp,
+            p_contacts: basePayload.contacts,
+            p_medical: basePayload.medical
+          });
+
+          // 3. Fallback direct table upsert
           await supabase.from('tags').upsert({
-            tag_id: activeTagId.toLowerCase().trim(),
+            tag_id: basePayload.tag_id,
             owner_id: user.id,
-            ...basePayload,
-            emergency_mode: formData.emergency_mode || false,
+            child_name: basePayload.child_name,
+            avatar: basePayload.avatar,
+            parent_whatsapp: basePayload.parent_whatsapp,
+            contacts: basePayload.contacts,
+            medical: basePayload.medical,
+            emergency_mode: basePayload.emergency_mode,
             claimed_at: new Date().toISOString()
           });
         }
 
+        // Re-fetch tags from database to keep tags list updated, without resetting the active edit form
         const reFetched = await supabase.from('tags').select('*').eq('owner_id', user.id);
         if (reFetched.data && reFetched.data.length > 0) {
           setTags(reFetched.data);
-          const current = reFetched.data.find((t: any) => t.tag_id.toLowerCase() === activeTagId.toLowerCase());
-          if (current) {
-            loadTagForEdit(current);
-          }
         }
       } catch (err: any) {
         console.warn('Catch error on save:', err);
       }
     }
 
-    // Always update local React state so user's edits are retained in current session
-    const fullState = { ...basePayload, emergency_mode: formData.emergency_mode || false };
-    setTags(prev => prev.map(t => t.tag_id === activeTagId ? { ...t, ...fullState } : t));
+    // Retain full updated state in current editing session and tags list
+    const updatedState = { ...formData, ...basePayload };
+    setFormData(updatedState);
+    setTags(prev => prev.map(t => t.tag_id.toLowerCase() === cleanTagCode ? { ...t, ...updatedState } : t));
     
     setSaving(false);
 

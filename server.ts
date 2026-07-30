@@ -655,6 +655,68 @@ app.use((req, res, next) => {
     `;
   }
 
+  // Server endpoint to create order directly in Supabase
+  app.post("/api/orders", async (req, res) => {
+    try {
+      const {
+        customer_name,
+        customer_contact,
+        customer_email,
+        quantity,
+        shipping_address,
+        color,
+        size
+      } = req.body;
+
+      if (!customer_name) {
+        return res.status(400).json({ error: "customer_name is required" });
+      }
+
+      const clientToUse = supabaseAdmin || createClient(
+        supabaseUrl,
+        process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''
+      );
+
+      // Try RPC first (security definer bypasses RLS)
+      const { data: rpcData, error: rpcError } = await clientToUse.rpc('create_public_order', {
+        p_customer_name: customer_name,
+        p_customer_contact: customer_contact,
+        p_customer_email: customer_email || null,
+        p_quantity: parseInt(quantity) || 1,
+        p_shipping_address: shipping_address || null,
+        p_color: color || null,
+        p_size: size || null
+      });
+
+      if (!rpcError) {
+        return res.json({ success: true, order: rpcData });
+      }
+
+      console.warn("create_public_order RPC warning, trying direct insert fallback:", rpcError.message);
+
+      const { data, error } = await clientToUse.from('orders').insert([{
+        customer_name,
+        customer_contact,
+        customer_email: customer_email || null,
+        quantity: parseInt(quantity) || 1,
+        status: 'pending',
+        shipping_address,
+        color,
+        size
+      }]).select().single();
+
+      if (error) {
+        console.error("Server API orders insert error:", error);
+        return res.status(500).json({ error: error.message });
+      }
+
+      return res.json({ success: true, order: data });
+    } catch (err: any) {
+      console.error("Server API orders exception:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
   // Send new customer order notification emails (Client Confirmation + Admin Notification)
   app.post("/api/notify/order", async (req, res) => {
     try {
@@ -934,9 +996,6 @@ app.use((req, res, next) => {
     const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
     return `${protocol}://${host}`;
   };
-
-
-
 
 async function startServer() {
   // Serve static files / Vite middleware

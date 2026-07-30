@@ -41,19 +41,70 @@ export default function Home() {
         ? `${formData.number} | Email: ${formData.email}`
         : formData.number;
       
-      const { error } = await supabase.from('orders').insert([{
-        customer_name: formData.name,
-        customer_contact: contactInfo,
-        customer_email: formData.email || null,
-        quantity: parseInt(formData.bands) || 1,
-        status: 'pending',
-        shipping_address: formData.address,
-        color: formData.color,
-        size: formData.size
-      }]);
-      
-      if (error) {
-        setSubmitMessage('Error submitting order: ' + error.message);
+      let insertError: any = null;
+      try {
+        // 1. Try create_public_order RPC
+        const { error: rpcErr } = await supabase.rpc('create_public_order', {
+          p_customer_name: formData.name,
+          p_customer_contact: contactInfo,
+          p_customer_email: formData.email || null,
+          p_quantity: parseInt(formData.bands) || 1,
+          p_shipping_address: formData.address || null,
+          p_color: formData.color || null,
+          p_size: formData.size || null
+        });
+
+        if (!rpcErr) {
+          insertError = null;
+        } else {
+          // 2. Fallback to direct table insert
+          const { error: directErr } = await supabase.from('orders').insert([{
+            customer_name: formData.name,
+            customer_contact: contactInfo,
+            customer_email: formData.email || null,
+            quantity: parseInt(formData.bands) || 1,
+            status: 'pending',
+            shipping_address: formData.address,
+            color: formData.color,
+            size: formData.size
+          }]);
+          insertError = directErr;
+        }
+      } catch (err: any) {
+        insertError = err;
+      }
+
+      // If client insert failed, fallback to server API /api/orders
+      if (insertError) {
+        console.warn('Direct client order insert failed, attempting server API fallback:', insertError);
+        try {
+          const apiRes = await fetch('/api/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              customer_name: formData.name,
+              customer_contact: contactInfo,
+              customer_email: formData.email || null,
+              quantity: parseInt(formData.bands) || 1,
+              shipping_address: formData.address,
+              color: formData.color,
+              size: formData.size
+            })
+          });
+
+          if (apiRes.ok) {
+            insertError = null; // Cleared error!
+          } else {
+            const errBody = await apiRes.json().catch(() => ({}));
+            insertError = new Error(errBody.error || insertError.message || 'Server API failed');
+          }
+        } catch (apiErr: any) {
+          console.error("Server API fallback exception:", apiErr);
+        }
+      }
+
+      if (insertError) {
+        setSubmitMessage('Error submitting order: ' + (insertError.message || 'Please check form details and try again.'));
       } else {
         let emailNote = '';
         // Trigger order notification email (Client + Admin)

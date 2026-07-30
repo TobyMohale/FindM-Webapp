@@ -77,8 +77,10 @@ alter table public.orders enable row level security;
 -- ==========================================
 
 -- Orders Policies
+drop policy if exists "Anyone can insert an order" on public.orders;
 create policy "Anyone can insert an order"
     on public.orders for insert
+    to public, anon, authenticated
     with check (true);
 
 create policy "Admins can view and update orders"
@@ -233,6 +235,65 @@ $$;
 alter table public.tags add column if not exists emergency_mode boolean default false not null;
 
 -- ==========================================
+-- 7B. UPDATE CHILD SAFETY PROFILE RPC FUNCTION
+-- ==========================================
+create or replace function public.update_child_profile(
+    p_tag_id text,
+    p_child_name text,
+    p_avatar text default '🧒',
+    p_parent_whatsapp text default '',
+    p_contacts jsonb default '[]'::jsonb,
+    p_medical jsonb default '{"allergies": "", "conditions": "", "notes": ""}'::jsonb,
+    p_emergency_mode boolean default false
+)
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+    v_user_id uuid;
+    clean_code text;
+    v_owner_id uuid;
+begin
+    v_user_id := auth.uid();
+    if v_user_id is null then
+        raise exception 'User must be authenticated to update profile.';
+    end if;
+
+    clean_code := lower(trim(p_tag_id));
+
+    select owner_id into v_owner_id from public.tags where lower(tag_id) = clean_code;
+
+    if v_owner_id is not null and v_owner_id != v_user_id then
+        raise exception 'You do not have permission to edit this tag.';
+    end if;
+
+    update public.tags
+    set owner_id = v_user_id,
+        child_name = p_child_name,
+        avatar = p_avatar,
+        parent_whatsapp = p_parent_whatsapp,
+        contacts = coalesce(p_contacts, '[]'::jsonb),
+        medical = coalesce(p_medical, '{"allergies": "", "conditions": "", "notes": ""}'::jsonb),
+        emergency_mode = coalesce(p_emergency_mode, false),
+        claimed_at = coalesce(claimed_at, timezone('utc'::text, now()))
+    where lower(tag_id) = clean_code;
+
+    if not found then
+        insert into public.tags (
+            tag_id, owner_id, child_name, avatar, parent_whatsapp, contacts, medical, emergency_mode, claimed_at
+        ) values (
+            clean_code, v_user_id, p_child_name, p_avatar, p_parent_whatsapp, coalesce(p_contacts, '[]'::jsonb), coalesce(p_medical, '{"allergies": "", "conditions": "", "notes": ""}'::jsonb), coalesce(p_emergency_mode, false), timezone('utc'::text, now())
+        );
+    end if;
+
+    return jsonb_build_object('success', true, 'message', 'Child safety profile updated successfully');
+end;
+$$;
+
+grant execute on function public.update_child_profile to authenticated, anon;
+
+-- ==========================================
 -- 8. PUBLIC SCAN STATISTICS INCREMENT RPC
 -- ==========================================
 -- Security Definer function to safely increment scan count from the public Tap page without exposing general update permissions
@@ -306,4 +367,55 @@ begin
     );
 end;
 $$;
+
+-- ==========================================
+-- 11. ENABLE REALTIME PUBLICATION FOR TAGS & ORDERS
+-- ==========================================
+alter publication supabase_realtime add table public.tags, public.orders;
+
+-- ==========================================
+-- 12. PUBLIC ORDER CREATION RPC (SECURITY DEFINER)
+-- ==========================================
+create or replace function public.create_public_order(
+    p_customer_name text,
+    p_customer_contact text,
+    p_customer_email text default null,
+    p_quantity integer default 1,
+    p_shipping_address text default null,
+    p_color text default null,
+    p_size text default null
+)
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+    v_order record;
+begin
+    insert into public.orders (
+        customer_name,
+        customer_contact,
+        customer_email,
+        quantity,
+        status,
+        shipping_address,
+        color,
+        size
+    ) values (
+        p_customer_name,
+        p_customer_contact,
+        p_customer_email,
+        coalesce(p_quantity, 1),
+        'pending',
+        p_shipping_address,
+        p_color,
+        p_size
+    ) returning * into v_order;
+
+    return jsonb_build_object('success', true, 'id', v_order.id);
+end;
+$$;
+
+grant execute on function public.create_public_order to anon, authenticated;
+
 
