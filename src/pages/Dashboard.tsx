@@ -325,67 +325,36 @@ export default function Dashboard() {
       // 1. Check if tag exists in database
       const existingTag = await findTagInDatabase(cleanTagId);
 
-      if (existingTag) {
-        if (existingTag.owner_id && existingTag.owner_id !== user.id) {
-          setModalError('This wristband code is already registered to another account.');
-          setModalLoading(false);
-          return;
-        }
+      // Save/claim tag via server API route (uses service role key to bypass RLS)
+      const apiSaveRes = await fetch('/api/tags/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tag_id: cleanTagId,
+          owner_id: user.id,
+          child_name: targetChildName,
+          avatar: existingTag?.avatar || '🧒',
+          parent_whatsapp: parentPhone || existingTag?.parent_whatsapp || '',
+          contacts: existingTag?.contacts || [],
+          medical: existingTag?.medical || { allergies: '', conditions: '', notes: '' }
+        })
+      });
+      const apiSaveJson = await apiSaveRes.json();
 
-        // Claim existing tag
-        const { error: claimErr } = await supabase.rpc('claim_tag', {
-          p_tag_id: existingTag.tag_id,
-          p_child_name: targetChildName || existingTag.child_name || 'My Child',
-          p_avatar: existingTag.avatar || '🧒',
-          p_parent_whatsapp: parentPhone || existingTag.parent_whatsapp || '',
-          p_contacts: existingTag.contacts || [],
-          p_medical: existingTag.medical || { allergies: '', conditions: '', notes: '' }
-        });
-
-        if (claimErr) {
-          // Direct fallback update
-          const { error: updateErr } = await supabase.from('tags').update({
-            owner_id: user.id,
-            child_name: targetChildName || existingTag.child_name || 'My Child',
-            parent_whatsapp: parentPhone || existingTag.parent_whatsapp || '',
-            claimed_at: new Date().toISOString()
-          }).eq('tag_id', existingTag.tag_id);
-
-          if (updateErr) {
-            setModalError('Failed to claim tag: ' + claimErr.message);
-            setModalLoading(false);
-            return;
-          }
-        }
-      } else {
-        // Tag does not exist in database yet -> Claim via RPC or fallback insert
+      if (!apiSaveJson.success) {
+        // Fallback to client RPC if API error
         const { error: claimErr } = await supabase.rpc('claim_tag', {
           p_tag_id: cleanTagId,
           p_child_name: targetChildName,
-          p_avatar: '🧒',
-          p_parent_whatsapp: parentPhone || '',
-          p_contacts: [],
-          p_medical: { allergies: '', conditions: '', notes: '' }
+          p_avatar: existingTag?.avatar || '🧒',
+          p_parent_whatsapp: parentPhone || existingTag?.parent_whatsapp || '',
+          p_contacts: existingTag?.contacts || [],
+          p_medical: existingTag?.medical || { allergies: '', conditions: '', notes: '' }
         });
-
         if (claimErr) {
-          const newProfile = {
-            tag_id: cleanTagId,
-            owner_id: user.id,
-            child_name: targetChildName,
-            avatar: '🧒',
-            parent_whatsapp: parentPhone || '',
-            contacts: [],
-            medical: { allergies: '', conditions: '', notes: '' },
-            claimed_at: new Date().toISOString()
-          };
-
-          const { error: insertErr } = await supabase.from('tags').insert([newProfile]);
-          if (insertErr) {
-            setModalError('Failed to create tag profile: ' + insertErr.message);
-            setModalLoading(false);
-            return;
-          }
+          setModalError('Failed to claim tag: ' + claimErr.message);
+          setModalLoading(false);
+          return;
         }
       }
 
@@ -672,18 +641,22 @@ export default function Dashboard() {
       console.warn('Auto-login exception:', err);
     }
 
-    // 3. Claim tag via RPC
+    // 3. Claim tag via server API route (bypasses RLS with service role key)
     try {
-      await supabase.rpc('claim_tag', {
-        p_tag_id: newTagId,
-        p_child_name: finalChildName,
-        p_avatar: '🧒',
-        p_parent_whatsapp: parentPhone.trim() || '',
-        p_contacts: [],
-        p_medical: { allergies: '', conditions: '', notes: '' }
+      await fetch('/api/tags/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tag_id: newTagId,
+          child_name: finalChildName,
+          avatar: '🧒',
+          parent_whatsapp: parentPhone.trim() || '',
+          contacts: [],
+          medical: { allergies: '', conditions: '', notes: '' }
+        })
       });
     } catch (err) {
-      console.warn('claim_tag RPC warning on signup:', err);
+      console.warn('Server API tag save warning on signup:', err);
     }
 
     // 4. Send notification email
@@ -744,20 +717,38 @@ export default function Dashboard() {
         return;
       }
 
-      // Attempt atomic claim using claim_tag RPC first
-      const { error: claimError } = await supabase.rpc('claim_tag', {
-        p_tag_id: cleanTagId,
-        p_child_name: childName || 'Child',
-        p_avatar: '🧒',
-        p_parent_whatsapp: parentPhone || '',
-        p_contacts: [],
-        p_medical: { allergies: '', conditions: '', notes: '' }
+      // Save/claim tag via server API route (bypasses RLS with service role key)
+      const saveRes = await fetch('/api/tags/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tag_id: cleanTagId,
+          owner_id: user.id,
+          child_name: childName || 'Child',
+          avatar: '🧒',
+          parent_whatsapp: parentPhone || '',
+          contacts: [],
+          medical: { allergies: '', conditions: '', notes: '' }
+        })
       });
+      const saveJson = await saveRes.json();
 
-      if (claimError) {
-        alert('Failed to claim tag: ' + claimError.message);
-        setSaving(false);
-        return;
+      if (!saveJson.success) {
+        // Fallback to claim_tag RPC
+        const { error: claimError } = await supabase.rpc('claim_tag', {
+          p_tag_id: cleanTagId,
+          p_child_name: childName || 'Child',
+          p_avatar: '🧒',
+          p_parent_whatsapp: parentPhone || '',
+          p_contacts: [],
+          p_medical: { allergies: '', conditions: '', notes: '' }
+        });
+
+        if (claimError) {
+          alert('Failed to claim tag: ' + claimError.message);
+          setSaving(false);
+          return;
+        }
       }
 
       setTagToClaim('');

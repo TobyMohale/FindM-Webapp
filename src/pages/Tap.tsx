@@ -78,23 +78,37 @@ export default function TapView() {
         let tagData: any = null;
         let isClaimed = false;
 
-        // 1. First attempt: Call get_public_tag RPC
+        // 1. Primary attempt via Server API endpoint (uses service role key to get exact fresh row)
         try {
-          const fetchPromise = supabase.rpc('get_public_tag', { p_tag_id: cleanTagId });
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('RPC query timeout (3s limit).')), 3000)
-          );
-          const { data: rpcData, error: rpcErr } = await Promise.race([fetchPromise, timeoutPromise]) as any;
-
-          if (!rpcErr && rpcData) {
-            tagData = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-            isClaimed = tagData && (tagData.is_claimed !== undefined ? tagData.is_claimed : !!tagData.owner_id);
+          const apiRes = await fetch(`/api/tags/get/${cleanTagId}`);
+          const apiData = await apiRes.json();
+          if (apiData && apiData.success && apiData.tag) {
+            tagData = apiData.tag;
+            isClaimed = !!tagData.owner_id || (tagData.child_name && tagData.child_name.trim().length > 0);
           }
         } catch (e) {
-          console.warn('RPC lookup failed or timed out, falling back to direct table lookup:', e);
+          console.warn('Server API tag lookup warning:', e);
         }
 
-        // 2. Fallback attempt if RPC returned nothing or errored: Direct table query
+        // 2. Fallback attempt: Call get_public_tag RPC
+        if (!tagData) {
+          try {
+            const fetchPromise = supabase.rpc('get_public_tag', { p_tag_id: cleanTagId });
+            const timeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('RPC query timeout (3s limit).')), 3000)
+            );
+            const { data: rpcData, error: rpcErr } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+
+            if (!rpcErr && rpcData) {
+              tagData = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+              isClaimed = tagData && (tagData.is_claimed !== undefined ? tagData.is_claimed : !!tagData.owner_id);
+            }
+          } catch (e) {
+            console.warn('RPC lookup failed or timed out, falling back to direct table lookup:', e);
+          }
+        }
+
+        // 3. Fallback attempt: Direct table query
         if (!tagData) {
           try {
             const { data: directData, error: directErr } = await supabase
@@ -109,20 +123,6 @@ export default function TapView() {
             }
           } catch (e) {
             console.warn('Direct table lookup failed:', e);
-          }
-        }
-
-        // 3. Fallback attempt via Server API endpoint (uses service role key)
-        if (!tagData) {
-          try {
-            const apiRes = await fetch(`/api/tags/get/${cleanTagId}`);
-            const apiData = await apiRes.json();
-            if (apiData && apiData.success && apiData.tag) {
-              tagData = apiData.tag;
-              isClaimed = !!tagData.owner_id || (tagData.child_name && tagData.child_name.trim().length > 0);
-            }
-          } catch (e) {
-            console.warn('Server API tag lookup failed:', e);
           }
         }
 
