@@ -16,12 +16,9 @@ const triggerHaptic = () => {
 export default function Admin() {
   const navigate = useNavigate();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-  const [passcode, setPasscode] = useState('');
   const [authorized, setAuthorized] = useState(false);
   const [passError, setPassError] = useState('');
 
-  // Login Method Tab State
-  const [loginMethod, setLoginMethod] = useState<'passcode' | 'email'>('passcode');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
@@ -31,13 +28,6 @@ export default function Admin() {
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoverySuccess, setRecoverySuccess] = useState('');
   const [recoveryError, setRecoveryError] = useState('');
-
-  // Password Change in Admin Panel settings
-  const [currentPass, setCurrentPass] = useState('');
-  const [newPass, setNewPass] = useState('');
-  const [confirmPass, setConfirmPass] = useState('');
-  const [changeSuccess, setChangeSuccess] = useState('');
-  const [changeError, setChangeError] = useState('');
 
   const [batchSize, setBatchSize] = useState(100);
   const [loading, setLoading] = useState(false);
@@ -129,18 +119,12 @@ export default function Admin() {
     document.body.removeChild(textArea);
   };
 
-  const getStoredPasscode = () => {
-    return localStorage.getItem('findme_admin_passcode') || 'Findme_Pw101';
-  };
-
   const handleLogout = async () => {
     triggerHaptic();
     await supabase.auth.signOut();
     localStorage.removeItem('findme_session');
-    localStorage.removeItem('findme_current_user');
     setIsAdmin(false);
     setAuthorized(false);
-    setPasscode('');
     setAdminEmail('');
     setAdminPassword('');
     navigate('/');
@@ -161,20 +145,21 @@ export default function Admin() {
   useEffect(() => {
     const checkAdmin = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user && (user.email === 'johannesburgwebstudio@gmail.com' || user.email === 'admin@lotap.co.za' || user.email === 'findmewebapp7@gmail.com')) {
+      if (!user) {
+        setIsAdmin(false);
+        return;
+      }
+      let isAdminUser = false;
+      try {
+        const { data } = await supabase.rpc('is_admin');
+        isAdminUser = !!data;
+      } catch (err) {
+        console.warn('is_admin RPC check warning:', err);
+      }
+      if (isAdminUser) {
         setIsAdmin(true);
         setAuthorized(true);
       } else {
-        const localUser = localStorage.getItem('findme_current_user');
-        if (localUser) {
-          const parsed = JSON.parse(localUser);
-          const email = parsed.email?.toLowerCase() || '';
-          if (['johannesburgwebstudio@gmail.com', 'admin@lotap.co.za', 'findmewebapp7@gmail.com'].includes(email)) {
-            setIsAdmin(true);
-            setAuthorized(true);
-            return;
-          }
-        }
         setIsAdmin(false);
       }
     };
@@ -234,18 +219,6 @@ export default function Admin() {
     setUpdatingOrderStatus(prev => ({ ...prev, [orderId]: false }));
   };
 
-  const handlePasscodeSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const storedPasscode = getStoredPasscode();
-    if (passcode === storedPasscode || passcode === 'lotap2026' || passcode === 'Findme_Pw101') {
-      triggerHaptic();
-      setAuthorized(true);
-      setPassError('');
-    } else {
-      setPassError('Invalid administrator passcode. Please try again.');
-    }
-  };
-
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthLoading(true);
@@ -254,74 +227,35 @@ export default function Admin() {
     const emailLowerInput = adminEmail.toLowerCase().trim();
     const passwordInput = adminPassword;
 
-    let { data, error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: emailLowerInput,
       password: passwordInput,
     });
 
-    const ADMIN_EMAILS = ['johannesburgwebstudio@gmail.com', 'admin@lotap.co.za', 'findmewebapp7@gmail.com'];
-
-    if (error && ADMIN_EMAILS.includes(emailLowerInput)) {
-      if (passwordInput === 'Findme_Pw101' || passwordInput === 'lotap2026' || passwordInput === getStoredPasscode()) {
-        const signUpRes = await supabase.auth.signUp({ email: emailLowerInput, password: passwordInput });
-        if (signUpRes.data?.user) {
-          data = signUpRes.data as any;
-          error = null;
-        } else {
-          localStorage.setItem('findme_current_user', JSON.stringify({ email: emailLowerInput, role: 'admin' }));
-          setIsAdmin(true);
-          setAuthorized(true);
-          setPassError('');
-          triggerHaptic();
-          setAuthLoading(false);
-          return;
-        }
-      }
+    if (error || !data?.user) {
+      setPassError(error?.message || 'Invalid admin email or password.');
+      setAuthLoading(false);
+      return;
     }
 
+    let isAdminUser = false;
+    try {
+      const { data: rpcData } = await supabase.rpc('is_admin');
+      isAdminUser = !!rpcData;
+    } catch (err) {
+      console.warn('is_admin RPC check warning:', err);
+    }
+
+    if (isAdminUser) {
+      setIsAdmin(true);
+      setAuthorized(true);
+      setPassError('');
+      triggerHaptic();
+    } else {
+      setPassError('Access denied: This account is not registered as an administrator.');
+      await supabase.auth.signOut();
+    }
     setAuthLoading(false);
-    if (error) {
-      setPassError(error.message || 'Invalid admin email or password.');
-    } else if (data?.user) {
-      const emailLower = data.user.email?.toLowerCase();
-      if (ADMIN_EMAILS.includes(emailLower || '')) {
-        localStorage.setItem('findme_current_user', JSON.stringify({ email: emailLower, role: 'admin' }));
-        setIsAdmin(true);
-        setAuthorized(true);
-        setPassError('');
-        triggerHaptic();
-      } else {
-        setPassError('Access denied: This user account is not registered as an administrator.');
-        await supabase.auth.signOut();
-      }
-    }
-  };
-
-  const handleChangePasscode = (e: React.FormEvent) => {
-    e.preventDefault();
-    const storedPasscode = getStoredPasscode();
-    if (currentPass !== storedPasscode && currentPass !== 'lotap2026') {
-      setChangeError('Current passcode is incorrect.');
-      setChangeSuccess('');
-      return;
-    }
-    if (newPass.length < 6) {
-      setChangeError('New passcode must be at least 6 characters.');
-      setChangeSuccess('');
-      return;
-    }
-    if (newPass !== confirmPass) {
-      setChangeError('New passcode confirmation does not match.');
-      setChangeSuccess('');
-      return;
-    }
-    localStorage.setItem('findme_admin_passcode', newPass);
-    setChangeSuccess('Passcode successfully updated!');
-    setChangeError('');
-    setCurrentPass('');
-    setNewPass('');
-    setConfirmPass('');
-    triggerHaptic();
   };
 
   const handleEmailResetRequest = async (e: React.FormEvent) => {
@@ -417,7 +351,7 @@ export default function Admin() {
       // 1. Reset all tags to unclaimed (owner_id = null, child_name = null)
       const { error: tagErr } = await supabase
         .from('tags')
-        .update({ owner_id: null, child_name: null, is_claimed: false })
+        .update({ owner_id: null, child_name: null, claimed_at: null })
         .neq('tag_id', '');
 
       if (tagErr) console.warn("Tag reset error:", tagErr);
@@ -547,7 +481,7 @@ export default function Admin() {
         <h2 className="text-2xl font-black text-[#051650] mb-2 font-serif uppercase tracking-tight">Restricted Area</h2>
         <p className="text-xs text-slate-500 mb-6 leading-relaxed">
           This panel is restricted to <strong>LoTap Administrators</strong>. 
-          Sign in with your admin account or enter the secure passcode.
+          Sign in with your registered administrator account.
         </p>
 
         {recoverySuccess && (
@@ -556,74 +490,35 @@ export default function Admin() {
           </div>
         )}
 
-        {/* Tab Selection */}
-        <div className="flex bg-slate-100 p-1 rounded-xl mb-4 text-xs font-black uppercase tracking-wider">
+        <form onSubmit={handleEmailLogin} className="space-y-4 text-left">
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Admin Email Address</label>
+            <input 
+              type="email" 
+              placeholder="Enter admin email address" 
+              value={adminEmail}
+              onChange={e => setAdminEmail(e.target.value)}
+              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Password</label>
+            <input 
+              type="password" 
+              placeholder="••••••••" 
+              value={adminPassword}
+              onChange={e => setAdminPassword(e.target.value)}
+              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
+            />
+          </div>
           <button 
-            type="button"
-            onClick={() => { setLoginMethod('passcode'); setPassError(''); }}
-            className={`flex-1 py-2 rounded-lg transition-all ${loginMethod === 'passcode' ? 'bg-white text-[#051650] shadow-sm font-extrabold' : 'text-slate-400 hover:text-slate-600 font-semibold'}`}
+            type="submit" 
+            disabled={authLoading}
+            className="w-full bg-[#051650] text-white py-3 px-4 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-[#0A2472] transition-colors shadow-md disabled:opacity-50 mb-3"
           >
-            🔑 Passcode
+            {authLoading ? 'Verifying Account...' : 'Sign In as Admin'}
           </button>
-          <button 
-            type="button"
-            onClick={() => { setLoginMethod('email'); setPassError(''); }}
-            className={`flex-1 py-2 rounded-lg transition-all ${loginMethod === 'email' ? 'bg-white text-[#051650] shadow-sm font-extrabold' : 'text-slate-400 hover:text-slate-600 font-semibold'}`}
-          >
-            📧 Email Login
-          </button>
-        </div>
-
-        {loginMethod === 'passcode' ? (
-          <form onSubmit={handlePasscodeSubmit} className="space-y-4 text-left">
-            <div>
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Enter Admin Passcode</label>
-              <input 
-                type="password" 
-                placeholder="••••••••" 
-                value={passcode}
-                onChange={e => setPasscode(e.target.value)}
-                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-center text-[#051650] font-semibold tracking-widest text-sm"
-              />
-            </div>
-            <button 
-              type="submit" 
-              className="w-full bg-[#051650] text-white py-3 px-4 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-[#0A2472] transition-colors shadow-md"
-            >
-              Unlock Access
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleEmailLogin} className="space-y-4 text-left">
-            <div>
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Admin Email Address</label>
-              <input 
-                type="email" 
-                placeholder="Enter admin email address" 
-                value={adminEmail}
-                onChange={e => setAdminEmail(e.target.value)}
-                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Password</label>
-              <input 
-                type="password" 
-                placeholder="••••••••" 
-                value={adminPassword}
-                onChange={e => setAdminPassword(e.target.value)}
-                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C54B8C] text-xs font-semibold text-[#051650]"
-              />
-            </div>
-            <button 
-              type="submit" 
-              disabled={authLoading}
-              className="w-full bg-[#051650] text-white py-3 px-4 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-[#0A2472] transition-colors shadow-md disabled:opacity-50 mb-3"
-            >
-              {authLoading ? 'Verifying Account...' : 'Sign In as Admin'}
-            </button>
-          </form>
-        )}
+        </form>
 
         {passError && (
           <p className="text-xs font-semibold text-red-600 mt-3">{passError}</p>
@@ -1367,68 +1262,6 @@ export default function Admin() {
         </div>
       )}
 
-
-
-      {/* Admin Passcode Settings Section */}
-      <div className="bg-slate-50 p-6 rounded-lg border border-slate-200 mt-6 mb-8 animate-fade-in">
-        <h2 className="text-lg font-bold text-[#051650] flex items-center gap-2 mb-2">
-          <span>🔒</span> Admin Passcode Security Settings
-        </h2>
-        <p className="text-xs text-slate-500 mb-4">
-          Change the secure administrator passcode required to unlock this administration panel.
-        </p>
-
-        <form onSubmit={handleChangePasscode} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Current Passcode</label>
-            <input 
-              type="password" 
-              required
-              placeholder="••••••••"
-              value={currentPass}
-              onChange={e => setCurrentPass(e.target.value)}
-              className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#051650] text-[#051650]"
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">New Secure Passcode</label>
-            <input 
-              type="password" 
-              required
-              placeholder="Min 6 characters"
-              value={newPass}
-              onChange={e => setNewPass(e.target.value)}
-              className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#051650] text-[#051650]"
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Confirm New Passcode</label>
-            <div className="flex gap-2">
-              <input 
-                type="password" 
-                required
-                placeholder="••••••••"
-                value={confirmPass}
-                onChange={e => setConfirmPass(e.target.value)}
-                className="flex-1 p-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#051650] text-[#051650]"
-              />
-              <button 
-                type="submit"
-                className="bg-[#C54B8C] hover:bg-[#B53389] text-white px-5 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shrink-0"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </form>
-
-        {changeError && (
-          <p className="text-xs font-semibold text-red-600 mt-3">{changeError}</p>
-        )}
-        {changeSuccess && (
-          <p className="text-xs font-semibold text-emerald-600 mt-3">{changeSuccess}</p>
-        )}
-      </div>
     </div>
   );
 }
