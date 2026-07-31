@@ -808,7 +808,11 @@ export default function Dashboard() {
   };
 
   const handleSave = async () => {
-    if (!activeTagId || !formData) return;
+    if (!activeTagId || !formData) {
+      setToastMessage('⚠️ Nothing to save — no active profile is loaded. Please select a child profile first.');
+      setTimeout(() => setToastMessage(null), 4000);
+      return;
+    }
 
     const trimmedChildName = (formData.child_name || '').trim();
     if (!trimmedChildName) {
@@ -840,6 +844,8 @@ export default function Dashboard() {
     };
 
     let savedTagFromApi: any = null;
+    let saveSucceeded = false;
+    let lastErrorMessage = '';
 
     try {
       // 1. Primary update method: Call server API route (bypasses RLS with service role key)
@@ -852,14 +858,19 @@ export default function Dashboard() {
         })
       });
       const saveResult = await saveRes.json();
-      if (saveResult && saveResult.success && saveResult.tag) {
+      if (saveRes.ok && saveResult && saveResult.success && saveResult.tag) {
         savedTagFromApi = saveResult.tag;
+        saveSucceeded = true;
+      } else {
+        lastErrorMessage = saveResult?.error || `Server save failed (HTTP ${saveRes.status}).`;
+        console.error('Server API tag save failed:', lastErrorMessage);
       }
-    } catch (e) {
+    } catch (e: any) {
+      lastErrorMessage = e?.message || 'Network error while saving.';
       console.warn('Server API tag save error:', e);
     }
 
-    if (user && !savedTagFromApi) {
+    if (user && !saveSucceeded) {
       try {
         // Fallback 1: update_child_profile RPC (security definer)
         const { error: rpcErr } = await supabase.rpc('update_child_profile', {
@@ -872,11 +883,14 @@ export default function Dashboard() {
           p_emergency_mode: basePayload.emergency_mode
         });
 
-        if (rpcErr) {
+        if (!rpcErr) {
+          saveSucceeded = true;
+        } else {
           console.warn('update_child_profile RPC failed, trying claim_tag / direct fallback:', rpcErr.message);
+          lastErrorMessage = rpcErr.message;
 
           // Fallback 2: claim_tag RPC
-          await supabase.rpc('claim_tag', {
+          const { error: claimErr } = await supabase.rpc('claim_tag', {
             p_tag_id: basePayload.tag_id,
             p_child_name: basePayload.child_name,
             p_avatar: basePayload.avatar,
@@ -885,20 +899,33 @@ export default function Dashboard() {
             p_medical: basePayload.medical
           });
 
-          // Fallback 3: direct table upsert
-          await supabase.from('tags').upsert({
-            tag_id: basePayload.tag_id,
-            owner_id: user.id,
-            child_name: basePayload.child_name,
-            avatar: basePayload.avatar,
-            parent_whatsapp: basePayload.parent_whatsapp,
-            contacts: basePayload.contacts,
-            medical: basePayload.medical,
-            emergency_mode: basePayload.emergency_mode,
-            claimed_at: new Date().toISOString()
-          });
+          if (!claimErr) {
+            saveSucceeded = true;
+          } else {
+            lastErrorMessage = claimErr.message;
+
+            // Fallback 3: direct table upsert
+            const { error: upsertErr } = await supabase.from('tags').upsert({
+              tag_id: basePayload.tag_id,
+              owner_id: user.id,
+              child_name: basePayload.child_name,
+              avatar: basePayload.avatar,
+              parent_whatsapp: basePayload.parent_whatsapp,
+              contacts: basePayload.contacts,
+              medical: basePayload.medical,
+              emergency_mode: basePayload.emergency_mode,
+              claimed_at: new Date().toISOString()
+            });
+
+            if (!upsertErr) {
+              saveSucceeded = true;
+            } else {
+              lastErrorMessage = upsertErr.message;
+            }
+          }
         }
       } catch (err: any) {
+        lastErrorMessage = err?.message || 'Unknown error while saving.';
         console.warn('Catch error on fallback save:', err);
       }
     }
@@ -907,12 +934,18 @@ export default function Dashboard() {
       await fetchUserTags(user.id);
     }
 
+    setSaving(false);
+
+    if (!saveSucceeded) {
+      setToastMessage(`⚠️ Save failed: ${lastErrorMessage || 'Unknown error.'} Your edits were NOT saved — please try again or check your connection.`);
+      setTimeout(() => setToastMessage(null), 6000);
+      return;
+    }
+
     // Apply exact saved state to form and active tags list
     const finalState = savedTagFromApi || { ...formData, ...basePayload };
     loadTagForEdit(finalState);
     setTags(prev => prev.map(t => t.tag_id.toLowerCase() === cleanTagCode ? finalState : t));
-    
-    setSaving(false);
 
     if (user) {
       setToastMessage(`✨ Safety profile for ${basePayload.child_name} saved successfully!`);
