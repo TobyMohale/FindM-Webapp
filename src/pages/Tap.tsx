@@ -487,7 +487,11 @@ export default function TapView() {
   }
 
   const t = DICTIONARY[lang];
-  const hasMedical = record.medical?.allergies || record.medical?.conditions || record.medical?.notes;
+  const hasMedical = !!(
+    (record.medical?.allergies && record.medical.allergies.trim()) ||
+    (record.medical?.conditions && record.medical.conditions.trim()) ||
+    (record.medical?.notes && record.medical.notes.trim())
+  );
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] pb-12 sm:pt-8 sm:px-4 flex justify-center font-sans relative overflow-hidden">
@@ -644,9 +648,9 @@ export default function TapView() {
             <h2 className="text-xs font-bold uppercase tracking-wider text-[#0A2472] mb-3">{t.medicalInfo}</h2>
             {hasMedical ? (
               <div className="bg-white border border-[#DCE6F5] rounded-xl p-4 shadow-sm text-sm text-[#051650] space-y-2">
-                {record.medical.allergies && <div><span className="font-bold">{t.allergies}:</span> {record.medical.allergies}</div>}
-                {record.medical.conditions && <div><span className="font-bold">{t.conditions}:</span> {record.medical.conditions}</div>}
-                {record.medical.notes && <div className="pt-2 mt-2 border-t border-slate-100 leading-relaxed"><span className="font-bold">{t.notes}:</span> <br/>{record.medical.notes}</div>}
+                {record.medical.allergies && record.medical.allergies.trim() && <div><span className="font-bold">{t.allergies}:</span> {record.medical.allergies}</div>}
+                {record.medical.conditions && record.medical.conditions.trim() && <div><span className="font-bold">{t.conditions}:</span> {record.medical.conditions}</div>}
+                {record.medical.notes && record.medical.notes.trim() && <div className="pt-2 mt-2 border-t border-slate-100 leading-relaxed"><span className="font-bold">{t.notes}:</span> <br/>{record.medical.notes}</div>}
               </div>
             ) : <p className="text-sm text-slate-500 italic">{t.noInfo}</p>}
           </div>
