@@ -862,7 +862,9 @@ export default function Dashboard() {
         savedTagFromApi = saveResult.tag;
         saveSucceeded = true;
       } else {
-        lastErrorMessage = saveResult?.error || `Server save failed (HTTP ${saveRes.status}).`;
+        lastErrorMessage = saveResult?.error
+          ? `${saveResult.error}${saveResult.debug ? ' | debug: ' + JSON.stringify(saveResult.debug) : ''}`
+          : `Server save failed (HTTP ${saveRes.status}).`;
         console.error('Server API tag save failed:', lastErrorMessage);
       }
     } catch (e: any) {
@@ -886,43 +888,13 @@ export default function Dashboard() {
         if (!rpcErr) {
           saveSucceeded = true;
         } else {
-          console.warn('update_child_profile RPC failed, trying claim_tag / direct fallback:', rpcErr.message);
+          // Note: claim_tag and a direct anon upsert used to be tried here too.
+          // Both are structurally incapable of ever succeeding for an edit on an
+          // already-claimed tag (claim_tag only updates rows where owner_id is
+          // null, and RLS correctly blocks anon writes) — they were dead code
+          // that just produced a confusing final error message. Removed.
+          console.warn('update_child_profile RPC failed:', rpcErr.message);
           lastErrorMessage = rpcErr.message;
-
-          // Fallback 2: claim_tag RPC
-          const { error: claimErr } = await supabase.rpc('claim_tag', {
-            p_tag_id: basePayload.tag_id,
-            p_child_name: basePayload.child_name,
-            p_avatar: basePayload.avatar,
-            p_parent_whatsapp: basePayload.parent_whatsapp,
-            p_contacts: basePayload.contacts,
-            p_medical: basePayload.medical
-          });
-
-          if (!claimErr) {
-            saveSucceeded = true;
-          } else {
-            lastErrorMessage = claimErr.message;
-
-            // Fallback 3: direct table upsert
-            const { error: upsertErr } = await supabase.from('tags').upsert({
-              tag_id: basePayload.tag_id,
-              owner_id: user.id,
-              child_name: basePayload.child_name,
-              avatar: basePayload.avatar,
-              parent_whatsapp: basePayload.parent_whatsapp,
-              contacts: basePayload.contacts,
-              medical: basePayload.medical,
-              emergency_mode: basePayload.emergency_mode,
-              claimed_at: new Date().toISOString()
-            });
-
-            if (!upsertErr) {
-              saveSucceeded = true;
-            } else {
-              lastErrorMessage = upsertErr.message;
-            }
-          }
         }
       } catch (err: any) {
         lastErrorMessage = err?.message || 'Unknown error while saving.';

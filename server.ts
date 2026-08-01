@@ -16,6 +16,12 @@ const supabaseAdmin = (supabaseUrl && supabaseServiceKey)
   ? createClient(supabaseUrl, supabaseServiceKey)
   : null;
 
+if (!supabaseAdmin) {
+  console.error(
+    "[tags/save] supabaseAdmin is NULL at module init — SUPABASE_SERVICE_ROLE_KEY missing or falsy in this runtime. All /api/tags/save calls will silently fall back to the anon key and be blocked by RLS."
+  );
+}
+
 async function ensureAdminUser() {
   if (!supabaseAdmin) {
     console.warn("supabaseAdmin unavailable (SUPABASE_SERVICE_ROLE_KEY missing). Skipping auto admin user creation.");
@@ -736,10 +742,12 @@ app.use((req, res, next) => {
       }
 
       const cleanTagCode = tag_id.toString().trim().toLowerCase();
+      const usingServiceRole = !!supabaseAdmin;
       const clientToUse = supabaseAdmin || createClient(
         supabaseUrl,
         process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''
       );
+      console.log(`[tags/save] tag=${cleanTagCode} usingServiceRole=${usingServiceRole}`);
 
       // Check if tag already exists in PostgreSQL tags table
       const { data: existingTag } = await clientToUse
@@ -747,6 +755,7 @@ app.use((req, res, next) => {
         .select('*')
         .ilike('tag_id', cleanTagCode)
         .maybeSingle();
+      console.log(`[tags/save] tag=${cleanTagCode} existingTag found=${!!existingTag}`);
 
       const contactsArray = Array.isArray(contacts)
         ? contacts
@@ -787,7 +796,10 @@ app.use((req, res, next) => {
 
         if (error) {
           console.error("Server API tags update error:", error);
-          return res.status(500).json({ error: error.message });
+          return res.status(500).json({
+            error: error.message,
+            debug: { usingServiceRole, existingTagFound: !!existingTag, path: "update" }
+          });
         }
         return res.json({ success: true, tag: data });
       } else {
@@ -799,13 +811,16 @@ app.use((req, res, next) => {
 
         if (error) {
           console.error("Server API tags insert error:", error);
-          return res.status(500).json({ error: error.message });
+          return res.status(500).json({
+            error: error.message,
+            debug: { usingServiceRole, existingTagFound: !!existingTag, path: "insert" }
+          });
         }
         return res.json({ success: true, tag: data });
       }
     } catch (err: any) {
       console.error("Server API tags save exception:", err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: err.message, debug: { stage: "outer-catch" } });
     }
   });
 
