@@ -279,10 +279,20 @@ export default function Dashboard() {
       }
       return tagsList;
     } else {
-      // User has no saved tags in DB yet. Initialize setup profile template in local state using registered name
+      // No real row exists in the DB yet. Only show a "pending" placeholder if
+      // the user actually typed/confirmed a real wristband code earlier this
+      // session (registeredTagId/signupTagId) — never invent a random code.
+      // Inventing a fake tag_id here made it look like a profile had been
+      // saved when nothing had ever reached the database, and clicking Save
+      // against that fake id would always fail with "tag not found".
+      const knownRealCode = (registeredTagId || signupTagId || '').trim().toLowerCase();
+      if (!knownRealCode) {
+        setTags([]);
+        return [];
+      }
       const fallbackName = childName.trim() || 'My Child';
       const defaultTag = {
-        tag_id: registeredTagId || (signupTagId ? signupTagId.toLowerCase() : ('lt' + Math.floor(100000 + Math.random() * 900000).toString())),
+        tag_id: knownRealCode,
         owner_id: userId,
         child_name: fallbackName,
         avatar: '🧒',
@@ -290,7 +300,8 @@ export default function Dashboard() {
         contacts: [],
         medical: { allergies: '', conditions: '', notes: '' },
         emergency_mode: false,
-        claimed_at: new Date().toISOString()
+        claimed_at: new Date().toISOString(),
+        _unsaved: true
       };
       setTags([defaultTag]);
       loadTagForEdit(defaultTag);
@@ -339,7 +350,7 @@ export default function Dashboard() {
           medical: existingTag?.medical || { allergies: '', conditions: '', notes: '' }
         })
       });
-      const apiSaveJson = await apiSaveRes.json();
+      const apiSaveJson = await apiSaveRes.json().catch(() => ({ success: false, error: `Server returned non-JSON response (HTTP ${apiSaveRes.status}) — the primary save route did not respond correctly.` }));
 
       if (!apiSaveJson.success) {
         // Fallback to client RPC if API error
@@ -642,12 +653,15 @@ export default function Dashboard() {
     }
 
     // 3. Claim tag via server API route (bypasses RLS with service role key)
+    let tagSaveSucceeded = false;
+    let tagSaveErrorMessage = '';
     try {
-      await fetch('/api/tags/save', {
+      const saveRes = await fetch('/api/tags/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tag_id: newTagId,
+          owner_id: activeUserId,
           child_name: finalChildName,
           avatar: '🧒',
           parent_whatsapp: parentPhone.trim() || '',
@@ -655,8 +669,48 @@ export default function Dashboard() {
           medical: { allergies: '', conditions: '', notes: '' }
         })
       });
-    } catch (err) {
+      const saveJson = await saveRes.json().catch(() => ({ success: false }));
+      tagSaveSucceeded = !!(saveRes.ok && saveJson && saveJson.success);
+      if (!tagSaveSucceeded) {
+        tagSaveErrorMessage = saveJson?.error || `Server save failed (HTTP ${saveRes.status}).`;
+      }
+    } catch (err: any) {
       console.warn('Server API tag save warning on signup:', err);
+      tagSaveErrorMessage = err?.message || 'Network error while saving.';
+    }
+
+    // If the primary route failed and this was a real physical wristband code
+    // (validated as unclaimed back in step 1), try claiming it directly —
+    // this only works for a real pre-seeded physical tag, not an
+    // auto-generated digital-only code, since claim_tag can only update an
+    // existing unclaimed row, not create a brand new one.
+    if (!tagSaveSucceeded && signupTagId.trim()) {
+      try {
+        const { error: claimErr } = await supabase.rpc('claim_tag', {
+          p_tag_id: newTagId,
+          p_child_name: finalChildName,
+          p_avatar: '🧒',
+          p_parent_whatsapp: parentPhone.trim() || '',
+          p_contacts: [],
+          p_medical: { allergies: '', conditions: '', notes: '' }
+        });
+        if (!claimErr) {
+          tagSaveSucceeded = true;
+        } else {
+          tagSaveErrorMessage = claimErr.message;
+        }
+      } catch (err: any) {
+        tagSaveErrorMessage = err?.message || tagSaveErrorMessage;
+      }
+    }
+
+    if (!tagSaveSucceeded) {
+      setAuthLoading(false);
+      setAuthMsg(
+        `Your account was created, but we couldn't link wristband code "${newTagId.toUpperCase()}" yet: ${tagSaveErrorMessage}. ` +
+        `Please sign in and use "Add Digital Child Profile" on your dashboard to try again.`
+      );
+      return;
     }
 
     // 4. Send notification email
@@ -731,7 +785,7 @@ export default function Dashboard() {
           medical: { allergies: '', conditions: '', notes: '' }
         })
       });
-      const saveJson = await saveRes.json();
+      const saveJson = await saveRes.json().catch(() => ({ success: false, error: `Server returned non-JSON response (HTTP ${saveRes.status}) — the primary save route did not respond correctly.` }));
 
       if (!saveJson.success) {
         // Fallback to claim_tag RPC
@@ -874,7 +928,8 @@ export default function Dashboard() {
 
     if (user && !saveSucceeded) {
       try {
-        // Fallback 1: update_child_profile RPC (security definer)
+        // Fallback 1: update_child_profile RPC (security definer) — works when
+        // the row already exists and is owned by this user.
         const { error: rpcErr } = await supabase.rpc('update_child_profile', {
           p_tag_id: basePayload.tag_id,
           p_child_name: basePayload.child_name,
@@ -887,12 +942,25 @@ export default function Dashboard() {
 
         if (!rpcErr) {
           saveSucceeded = true;
+        } else if (/not found or not owned/i.test(rpcErr.message)) {
+          // The row doesn't exist yet (e.g. an unsaved placeholder profile,
+          // or an earlier claim attempt that silently failed) — try to
+          // actually create it via claim_tag instead of just giving up.
+          const { error: claimErr } = await supabase.rpc('claim_tag', {
+            p_tag_id: basePayload.tag_id,
+            p_child_name: basePayload.child_name,
+            p_avatar: basePayload.avatar,
+            p_parent_whatsapp: basePayload.parent_whatsapp,
+            p_contacts: basePayload.contacts,
+            p_medical: basePayload.medical
+          });
+          if (!claimErr) {
+            saveSucceeded = true;
+          } else {
+            console.warn('claim_tag create-fallback also failed:', claimErr.message);
+            lastErrorMessage = claimErr.message;
+          }
         } else {
-          // Note: claim_tag and a direct anon upsert used to be tried here too.
-          // Both are structurally incapable of ever succeeding for an edit on an
-          // already-claimed tag (claim_tag only updates rows where owner_id is
-          // null, and RLS correctly blocks anon writes) — they were dead code
-          // that just produced a confusing final error message. Removed.
           console.warn('update_child_profile RPC failed:', rpcErr.message);
           lastErrorMessage = rpcErr.message;
         }
