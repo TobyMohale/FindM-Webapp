@@ -122,11 +122,17 @@ export default function Home() {
               shipping_address: formData.address
             })
           });
-          if (res.ok) {
+          const resJson = await res.json().catch(() => null);
+          if (res.ok && resJson && resJson.success && resJson.sent) {
             emailNote = ' A confirmation email has been sent to ' + (formData.email || 'your email') + '.';
+          } else {
+            console.error(
+              'Order confirmation email did not send:',
+              !res.ok ? `HTTP ${res.status}` : (resJson ? JSON.stringify(resJson) : 'non-JSON response')
+            );
           }
         } catch (emailErr) {
-          console.warn("Order email exception:", emailErr);
+          console.error("Order email exception:", emailErr);
         }
 
         setSubmitMessage(`Thank you! Your order has been placed successfully.${emailNote} Our team will process dispatch.`);
