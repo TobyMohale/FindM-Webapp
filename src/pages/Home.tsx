@@ -109,7 +109,7 @@ export default function Home() {
         let emailNote = '';
         // Trigger order notification email (Client + Admin)
         try {
-          const res = await fetch('/api/notify/order', {
+          const res = await fetch('/.netlify/functions/notify-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
