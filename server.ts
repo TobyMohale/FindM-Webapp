@@ -1152,6 +1152,21 @@ app.use((req, res, next) => {
     return `${protocol}://${host}`;
   };
 
+// Diagnostic catch-all for unmatched /api/* requests. If a request reaches
+// this far, Express itself is running fine but no route matched - this
+// returns exactly what Express saw (originalUrl/path/method/normalized url)
+// so a 404 is self-explaining instead of an opaque HTML page, and we can
+// tell definitively whether this is a route-registration bug (this handler
+// fires, with a JSON body) versus the request never reaching Express at all
+// (still a raw Netlify/browser 404 with no JSON body).
+app.use('/api', (req, res) => {
+  console.error(`[unmatched /api route] method=${req.method} originalUrl=${req.originalUrl} path=${req.path} url=${req.url}`);
+  res.status(404).json({
+    error: 'No matching /api route in Express for this request.',
+    debug: { method: req.method, originalUrl: req.originalUrl, path: req.path, url: req.url }
+  });
+});
+
 async function startServer() {
   // Serve static files / Vite middleware
   if (process.env.NODE_ENV !== "production") {
