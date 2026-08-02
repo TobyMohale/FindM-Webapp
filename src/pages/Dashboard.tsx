@@ -371,7 +371,7 @@ export default function Dashboard() {
 
       // Trigger signup/claim notification email
       if (user?.email) {
-        fetch('/api/notify/signup', {
+        fetch('/.netlify/functions/notify-signup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -715,7 +715,7 @@ export default function Dashboard() {
 
     // 4. Send notification email
     try {
-      await fetch('/api/notify/signup', {
+      await fetch('/.netlify/functions/notify-signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -811,7 +811,7 @@ export default function Dashboard() {
       // Trigger signup/claim notification email (Parent Welcome + Admin Alert)
       if (user?.email) {
         try {
-          await fetch('/api/notify/signup', {
+          await fetch('/.netlify/functions/notify-signup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
