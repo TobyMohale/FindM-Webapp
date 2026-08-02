@@ -738,10 +738,23 @@ export default function Dashboard() {
     const { data: { user: currentUser } } = await supabase.auth.getUser();
     if (currentUser) {
       setUser(currentUser);
-      await fetchUserTags(currentUser.id);
+      let fetched = await fetchUserTags(currentUser.id);
+      // We just successfully claimed registeredTagId moments ago - if the
+      // very next read comes back empty, don't leave the user staring at
+      // the "claim a tag" empty state until they manually reload. Retry
+      // once after a short pause before giving up.
+      if ((!fetched || fetched.length === 0) && registeredTagId) {
+        await new Promise(resolve => setTimeout(resolve, 600));
+        fetched = await fetchUserTags(currentUser.id);
+      }
       if (currentUser.email) {
         await fetchUserOrders(currentUser.email);
       }
+      setIsSignUp(false);
+      setSignUpStep(1);
+      setTagToClaim('');
+      setNewChildTagCode('');
+      setNewChildName('');
     } else {
       window.location.reload();
     }
