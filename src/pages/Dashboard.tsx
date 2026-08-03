@@ -1462,7 +1462,7 @@ export default function Dashboard() {
         
         {/* Sidebar */}
         <div className="w-full md:w-72 shrink-0">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-6 flex-wrap gap-y-2">
             <div>
               <h1 className={`text-xl font-black font-serif ${theme === 'dark' ? 'text-[#FFCFF1]' : 'text-[#051650]'}`}>LoTap</h1>
               <p className="text-xs text-slate-400">Parent Dashboard</p>
@@ -1504,10 +1504,10 @@ export default function Dashboard() {
                   </button>
                   <button 
                     onClick={handleLogout} 
-                    className={`text-xs font-bold px-3 py-1.5 rounded-xl transition-all border cursor-pointer flex items-center gap-1.5 shadow-sm ${
+                    className={`text-xs font-bold px-3 py-2 min-h-[36px] rounded-xl transition-all border cursor-pointer flex items-center gap-1.5 shadow-sm ${
                       theme === 'dark'
-                        ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-[#051650]'
+                        ? 'bg-[#C54B8C]/15 border-[#C54B8C]/40 text-[#FFCFF1] hover:bg-[#C54B8C]/25'
+                        : 'bg-[#C54B8C]/10 border-[#C54B8C]/30 text-[#C54B8C] hover:bg-[#C54B8C]/20'
                     }`}
                   >
                     <span>🚪</span> Logout
