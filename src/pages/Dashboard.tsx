@@ -221,7 +221,12 @@ export default function Dashboard() {
 
   useEffect(() => {
     const loadData = async () => {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      // getSession() properly waits for the session to hydrate from storage;
+      // calling getUser() directly right on mount could occasionally run
+      // before that hydration finished, making an authenticated user's own
+      // RLS-scoped tags query return zero rows even though real rows exist.
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUser = session?.user || null;
       setUser(currentUser);
       
       const ADMIN_EMAILS = ['johannesburgwebstudio@gmail.com', 'admin@lotap.co.za', 'findmewebapp7@gmail.com'];
@@ -231,7 +236,13 @@ export default function Dashboard() {
       }
       
       if (currentUser) {
-        await fetchUserTags(currentUser.id);
+        let fetched = await fetchUserTags(currentUser.id);
+        if (!fetched || fetched.length === 0) {
+          // Retry once - a logged-in user momentarily showing zero tags is
+          // almost always a transient read, not really an empty account.
+          await new Promise(resolve => setTimeout(resolve, 500));
+          fetched = await fetchUserTags(currentUser.id);
+        }
         if (currentUser.email) {
           await fetchUserOrders(currentUser.email);
         }
