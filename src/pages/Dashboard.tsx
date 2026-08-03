@@ -441,9 +441,11 @@ export default function Dashboard() {
     setAuthMsg('');
     setResendEmailSuccess(false);
     let error;
+    let signedInUser = null;
     try {
       const result = await supabase.auth.signInWithPassword({ email: email.toLowerCase().trim(), password });
       error = result.error;
+      signedInUser = result.data?.user || null;
     } catch (err: any) {
       error = err;
     }
@@ -458,7 +460,25 @@ export default function Dashboard() {
       }
     } else {
       setAuthMsg('Logged in successfully!');
-      window.location.reload();
+      if (signedInUser) {
+        setUser(signedInUser);
+        const ADMIN_EMAILS = ['johannesburgwebstudio@gmail.com', 'admin@lotap.co.za', 'findmewebapp7@gmail.com'];
+        if (ADMIN_EMAILS.includes(signedInUser.email?.toLowerCase() || '')) {
+          navigate('/admin');
+        } else {
+          let fetched = await fetchUserTags(signedInUser.id);
+          if ((!fetched || fetched.length === 0)) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            fetched = await fetchUserTags(signedInUser.id);
+          }
+          if (signedInUser.email) {
+            await fetchUserOrders(signedInUser.email);
+          }
+        }
+      } else {
+        // Fallback for the rare case signInWithPassword didn't return a user
+        window.location.reload();
+      }
     }
     setAuthLoading(false);
   };
