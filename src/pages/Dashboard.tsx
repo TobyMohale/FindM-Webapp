@@ -121,6 +121,7 @@ export default function Dashboard() {
   const [orders, setOrders] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastAction, setToastAction] = useState<{ label: string; onClick: () => void } | null>(null);
 
   // Add Child Profile Modal State
   const [showAddChildModal, setShowAddChildModal] = useState(false);
@@ -409,11 +410,19 @@ export default function Dashboard() {
         } else {
           loadTagForEdit(updatedTags[0]);
         }
+        setToastMessage(`Wristband code "${cleanTagId.toUpperCase()}" successfully added!`);
+      } else {
+        // Claim succeeded, but the immediate re-fetch came back empty (e.g. a
+        // slow read-replica). Don't leave the parent silently stuck on the
+        // empty-state screen with no way forward — tell them plainly what
+        // to do and give them a one-click way to do it.
+        setToastMessage(`Wristband code "${cleanTagId.toUpperCase()}" was added! Reload the page — or click "Reload now" — to see your child's dashboard.`);
+        setToastAction({ label: 'Reload now', onClick: () => window.location.reload() });
       }
       setShowAddChildModal(false);
       setNewChildTagCode('');
       setNewChildName('');
-      setToastMessage(`Wristband code "${cleanTagId.toUpperCase()}" successfully added!`);
+
     } catch (err: any) {
       setModalError(err.message || 'Error adding child profile.');
     } finally {
@@ -1701,6 +1710,10 @@ export default function Dashboard() {
                   Click here to get started →
                 </button>
                 <a href="/#order" className="text-xs text-[#C54B8C] underline hover:text-[#051650]">Haven't received your wristband yet? Place an order</a>
+                <p className={`text-xs pt-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-400'}`}>
+                  Already added your child's profile?{' '}
+                  <button type="button" onClick={() => window.location.reload()} className="underline text-[#C54B8C] hover:text-[#051650]">Reload this page</button> to see their dashboard.
+                </p>
               </div>
             )
           ) : (
@@ -2402,10 +2415,18 @@ export default function Dashboard() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#051650] text-white text-xs font-black uppercase tracking-wider px-6 py-4 rounded-2xl shadow-2xl border border-white/10 flex items-center gap-2 animate-fade-in">
+        <div className="fixed bottom-6 right-6 z-50 bg-[#051650] text-white text-xs font-black uppercase tracking-wider px-6 py-4 rounded-2xl shadow-2xl border border-white/10 flex items-center gap-3 animate-fade-in max-w-sm">
           <span>🔔</span>
-          <span>{toastMessage}</span>
-          <button onClick={() => setToastMessage(null)} className="ml-2 hover:text-[#C54B8C] font-bold">✕</button>
+          <span className="normal-case tracking-normal font-semibold">{toastMessage}</span>
+          {toastAction && (
+            <button
+              onClick={() => { toastAction.onClick(); }}
+              className="shrink-0 bg-[#C54B8C] hover:bg-[#B33B7B] text-white px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider"
+            >
+              {toastAction.label}
+            </button>
+          )}
+          <button onClick={() => { setToastMessage(null); setToastAction(null); }} className="ml-1 hover:text-[#C54B8C] font-bold">✕</button>
         </div>
       )}
     </div>
