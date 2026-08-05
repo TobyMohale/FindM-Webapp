@@ -1679,13 +1679,28 @@ export default function Dashboard() {
               // account yet. Point at the "Add Digital Child Profile" button
               // in the sidebar (the one real claim flow) instead of duplicating
               // a second claim form here.
-              <div className="max-w-2xl mx-auto py-16 flex flex-col items-center text-center gap-3 animate-fade-in">
+              <div className="max-w-2xl mx-auto py-16 flex flex-col items-center text-center gap-4 animate-fade-in">
                 <span className="text-4xl">🧒</span>
-                <h2 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-[#051650]'}`}>No child profile yet</h2>
-                <p className={`text-sm max-w-sm ${theme === 'dark' ? 'text-slate-300' : 'text-slate-500'}`}>
-                  Use <strong>➕ Add Digital Child Profile</strong> on the left to claim your wristband's tag code, or{' '}
-                  <a href="/#order" className="text-[#C54B8C] underline hover:text-[#051650]">place an order first</a> if you haven't received one yet.
-                </p>
+                <div>
+                  <h2 className={`text-lg font-bold mb-1 ${theme === 'dark' ? 'text-white' : 'text-[#051650]'}`}>Complete your child's profile</h2>
+                  <p className={`text-sm max-w-sm ${theme === 'dark' ? 'text-slate-300' : 'text-slate-500'}`}>
+                    Add their emergency contacts and medical info so finders and schools can see it instantly.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic();
+                    setNewChildTagCode('');
+                    setNewChildName('');
+                    setModalError('');
+                    setShowAddChildModal(true);
+                  }}
+                  className="py-3 px-6 bg-[#051650] hover:bg-[#0A2472] dark:bg-[#C54B8C] dark:hover:bg-[#B33B7B] text-white text-sm font-bold rounded-xl transition-all shadow-md"
+                >
+                  Click here to get started →
+                </button>
+                <a href="/#order" className="text-xs text-[#C54B8C] underline hover:text-[#051650]">Haven't received your wristband yet? Place an order</a>
               </div>
             )
           ) : (
