@@ -131,6 +131,12 @@ export default function Dashboard() {
 
   // Form State
   const [formData, setFormData] = useState<any>(null);
+  // Tracks whether the initial session/tags load has finished, so the
+  // dashboard can tell "still loading" apart from "genuinely no tags yet" —
+  // previously both looked identical (formData === null) and showed the same
+  // full-page claim form, which is what confused parents who already had a
+  // claimed tag but just hit the loading window.
+  const [tagsLoaded, setTagsLoaded] = useState(false);
 
   // Theme State
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -247,6 +253,7 @@ export default function Dashboard() {
           await fetchUserOrders(currentUser.email);
         }
       }
+      setTagsLoaded(true);
     };
     loadData();
   }, []);
@@ -1562,7 +1569,7 @@ export default function Dashboard() {
             </div>
             {tags.length === 0 ? (
               <div className="p-6 text-center text-sm text-slate-500 font-medium">
-                No child profile yet. Claim your wristband's tag code below, or <a href="/#order" className="text-[#C54B8C] underline hover:text-[#051650]">place an order first</a>.
+                No child profile yet. Use "➕ Add Digital Child Profile" below to claim your wristband's tag code, or <a href="/#order" className="text-[#C54B8C] underline hover:text-[#051650]">place an order first</a>.
               </div>
             ) : (
               tags.map((t: any) => (
@@ -1659,78 +1666,28 @@ export default function Dashboard() {
             : 'bg-white border-slate-200 text-slate-800'
         }`}>
           {!formData ? (
-            <div className="max-w-2xl mx-auto py-4 space-y-6 animate-fade-in">
-              <div className="bg-gradient-to-tr from-[#051650] via-[#0A2472] to-[#C54B8C] p-6 sm:p-8 rounded-3xl text-white shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-[#FFCFF1]/10 rounded-bl-full pointer-events-none"></div>
-                <div className="space-y-4">
-                  <div className="inline-flex items-center gap-2 bg-[#FFCFF1]/20 border border-[#FFCFF1]/30 px-3 py-1 rounded-full text-[#FFCFF1] text-xs font-bold uppercase tracking-wider">
-                    <span>🏷️</span> LoTap Wristband Setup
-                  </div>
-                  <h2 className="text-2xl sm:text-3xl font-black font-serif text-[#FFCFF1]">Set Up Your Child Safety Profile</h2>
-                  <p className="text-xs sm:text-sm text-slate-100 leading-relaxed max-w-xl">
-                    Every physical LoTap wristband comes pre-printed with a 6-character code (e.g. <strong className="font-mono text-[#FFCFF1]">lt884615</strong>). Enter your wristband code below to claim it and configure your child's safety profile.
-                  </p>
-
-                  <div className="pt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-[#FFCFF1] mb-1">Wristband Code</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. lt884615"
-                        value={newChildTagCode}
-                        onChange={(e) => setNewChildTagCode(e.target.value.toUpperCase().trim())}
-                        className="w-full px-3.5 py-2.5 text-sm font-mono font-bold rounded-xl bg-white/10 border border-white/20 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-[#FFCFF1]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-[#FFCFF1] mb-1">Child's Name</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Child's Name"
-                        value={newChildName}
-                        onChange={(e) => setNewChildName(e.target.value)}
-                        className="w-full px-3.5 py-2.5 text-sm font-semibold rounded-xl bg-white/10 border border-white/20 text-white placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-[#FFCFF1]"
-                      />
-                    </div>
-                    <div className="flex items-end">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic();
-                          const code = newChildTagCode;
-                          const name = newChildName.trim() || childName.trim() || 'My Child';
-                          handleAddChildWithCode(code, name);
-                        }}
-                        disabled={modalLoading}
-                        className="w-full py-2.5 px-4 bg-white text-[#051650] hover:bg-[#FFCFF1] hover:text-[#C54B8C] font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        <span>🚀</span> {modalLoading ? 'Connecting...' : 'Claim & Start Setup'}
-                      </button>
-                    </div>
-                  </div>
-                  {modalError && (
-                    <p className="text-xs text-rose-200 bg-rose-900/40 p-2.5 rounded-xl border border-rose-400/30 font-semibold">{modalError}</p>
-                  )}
-                </div>
+            !tagsLoaded ? (
+              // Still resolving the session/tags on first mount — show a plain
+              // loading state instead of ever flashing the claim form for a
+              // parent who actually already has a claimed tag.
+              <div className="max-w-2xl mx-auto py-16 flex flex-col items-center gap-3 animate-fade-in">
+                <div className={`w-8 h-8 rounded-full border-2 border-t-transparent animate-spin ${theme === 'dark' ? 'border-[#FFCFF1]' : 'border-[#051650]'}`}></div>
+                <p className={`text-sm font-medium ${theme === 'dark' ? 'text-slate-300' : 'text-slate-500'}`}>Loading your dashboard…</p>
               </div>
-
-              <div className={`p-6 rounded-2xl border transition-colors ${
-                theme === 'dark' 
-                  ? 'bg-slate-950/50 border-white/5' 
-                  : 'bg-slate-50 border-slate-200'
-              }`}>
-                <h3 className={`text-sm font-bold mb-3 uppercase tracking-wider ${theme === 'dark' ? 'text-[#FFCFF1]' : 'text-[#051650]'}`}>How the "self-service upload" actually works</h3>
-                <p className={`text-xs leading-relaxed mb-3 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>
-                  The physical NFC chip only ever stores one thing: a URL, like <span className="font-mono bg-slate-200 dark:bg-slate-800 text-[#051650] dark:text-[#FFCFF1] px-1 py-0.5 rounded text-[11px]">https://lotap.co.za/</span>. That's written once, before the tag ships.
-                </p>
-                <p className={`text-xs leading-relaxed mb-3 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>
-                  Everything on this page is saved against that Tag ID in a database — not on the chip. So when a parent edits a phone number or adds an allergy months later, the same physical tag instantly shows the new info, because the tag was only ever a pointer.
-                </p>
-                <p className={`text-[11px] leading-relaxed font-medium pt-2 border-t border-slate-200 dark:border-slate-800 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                  In production this becomes: real user accounts, a proper backend (e.g. Supabase/Firebase), POPIA-compliant consent capture for a minor's data, and a real WhatsApp Business API call instead of a wa.me link.
+            ) : (
+              // Load finished and there really are zero claimed tags on this
+              // account yet. Point at the "Add Digital Child Profile" button
+              // in the sidebar (the one real claim flow) instead of duplicating
+              // a second claim form here.
+              <div className="max-w-2xl mx-auto py-16 flex flex-col items-center text-center gap-3 animate-fade-in">
+                <span className="text-4xl">🧒</span>
+                <h2 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-[#051650]'}`}>No child profile yet</h2>
+                <p className={`text-sm max-w-sm ${theme === 'dark' ? 'text-slate-300' : 'text-slate-500'}`}>
+                  Use <strong>➕ Add Digital Child Profile</strong> on the left to claim your wristband's tag code, or{' '}
+                  <a href="/#order" className="text-[#C54B8C] underline hover:text-[#051650]">place an order first</a> if you haven't received one yet.
                 </p>
               </div>
-            </div>
+            )
           ) : (
             <div className="max-w-2xl">
               <div className="flex flex-wrap justify-between items-center mb-8 gap-4">
