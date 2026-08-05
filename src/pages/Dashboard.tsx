@@ -802,6 +802,17 @@ export default function Dashboard() {
       setTagToClaim('');
       setNewChildTagCode('');
       setNewChildName('');
+      if (!fetched || fetched.length === 0) {
+        const knownRealCode = (registeredTagId || signupTagId || '').trim();
+        if (!knownRealCode) {
+          // No pending placeholder was possible either (fetchUserTags only
+          // falls back to one when it has a known real code) — nothing got
+          // put in formData at all. Tell the parent plainly instead of
+          // leaving them guessing whether registration actually worked.
+          setToastMessage("Your child's profile was registered! Reload the page — or click \"Reload now\" — to see your parent dashboard.");
+          setToastAction({ label: 'Reload now', onClick: () => window.location.reload() });
+        }
+      }
     } else {
       window.location.reload();
     }
@@ -2415,18 +2426,18 @@ export default function Dashboard() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#051650] text-white text-xs font-black uppercase tracking-wider px-6 py-4 rounded-2xl shadow-2xl border border-white/10 flex items-center gap-3 animate-fade-in max-w-sm">
-          <span>🔔</span>
-          <span className="normal-case tracking-normal font-semibold">{toastMessage}</span>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-2xl bg-[#051650] text-white px-6 py-5 rounded-2xl shadow-2xl border border-white/10 flex flex-col sm:flex-row items-center gap-4 animate-fade-in">
+          <span className="text-2xl shrink-0">🔔</span>
+          <span className="flex-1 text-sm font-semibold text-center sm:text-left">{toastMessage}</span>
           {toastAction && (
             <button
               onClick={() => { toastAction.onClick(); }}
-              className="shrink-0 bg-[#C54B8C] hover:bg-[#B33B7B] text-white px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider"
+              className="shrink-0 bg-[#C54B8C] hover:bg-[#B33B7B] text-white px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider"
             >
               {toastAction.label}
             </button>
           )}
-          <button onClick={() => { setToastMessage(null); setToastAction(null); }} className="ml-1 hover:text-[#C54B8C] font-bold">✕</button>
+          <button onClick={() => { setToastMessage(null); setToastAction(null); }} className="shrink-0 hover:text-[#C54B8C] font-bold text-lg">✕</button>
         </div>
       )}
     </div>
