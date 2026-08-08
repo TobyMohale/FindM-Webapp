@@ -214,6 +214,10 @@ export default function Dashboard() {
   const [parentPhone, setParentPhone] = useState('');
   const [registeredTagId, setRegisteredTagId] = useState<string | null>(null);
   const [signupTagId, setSignupTagId] = useState('');
+  // Holds the exact tag row /api/tags/save returns on a successful signup
+  // claim, so handleFinishOnboarding can land the parent on the real
+  // dashboard immediately without depending on a second read succeeding.
+  const [signupClaimedTag, setSignupClaimedTag] = useState<any>(null);
 
   useEffect(() => {
     // Check if we arrived via a claim route (/claim/:tag_id)
@@ -411,11 +415,23 @@ export default function Dashboard() {
           loadTagForEdit(updatedTags[0]);
         }
         setToastMessage(`Wristband code "${cleanTagId.toUpperCase()}" successfully added!`);
+      } else if (apiSaveJson.success && apiSaveJson.tag) {
+        // The immediate re-fetch (subject to RLS/read-replica timing) came
+        // back empty, but /api/tags/save already handed us the exact row it
+        // just wrote — no need to guess or ask the parent to reload. Use it
+        // directly to land on the real edit dashboard right now, and let the
+        // sidebar tag list catch up on its own in the background.
+        setTags((prev: any[]) => {
+          const withoutDupe = prev.filter((t: any) => t.tag_id.toLowerCase() !== cleanTagId);
+          return [...withoutDupe, apiSaveJson.tag];
+        });
+        loadTagForEdit(apiSaveJson.tag);
+        setToastMessage(`Wristband code "${cleanTagId.toUpperCase()}" successfully added!`);
+        fetchUserTags(user.id).catch(() => {});
       } else {
-        // Claim succeeded, but the immediate re-fetch came back empty (e.g. a
-        // slow read-replica). Don't leave the parent silently stuck on the
-        // empty-state screen with no way forward — tell them plainly what
-        // to do and give them a one-click way to do it.
+        // Genuinely no confirmed row to show (e.g. the claim_tag RPC
+        // fallback path, which doesn't return the row). Tell the parent
+        // plainly and give them a one-click way to recover.
         setToastMessage(`Wristband code "${cleanTagId.toUpperCase()}" was added! Reload the page — or click "Reload now" — to see your child's dashboard.`);
         setToastAction({ label: 'Reload now', onClick: () => window.location.reload() });
       }
@@ -720,6 +736,11 @@ export default function Dashboard() {
       tagSaveSucceeded = !!(saveRes.ok && saveJson && saveJson.success);
       if (!tagSaveSucceeded) {
         tagSaveErrorMessage = saveJson?.error || `Server save failed (HTTP ${saveRes.status}).`;
+      } else if (saveJson.tag) {
+        // Keep the row the server just wrote so handleFinishOnboarding can
+        // land straight on the real dashboard with it, without depending on
+        // a second read (RLS/replica timing) to come back in time.
+        setSignupClaimedTag(saveJson.tag);
       }
     } catch (err: any) {
       console.warn('Server API tag save warning on signup:', err);
@@ -802,6 +823,18 @@ export default function Dashboard() {
       setTagToClaim('');
       setNewChildTagCode('');
       setNewChildName('');
+      if ((!fetched || fetched.length === 0) && signupClaimedTag) {
+        // Both reads came back empty, but /api/tags/save handed us the exact
+        // row it wrote back during handleSignUpSubmit — use it directly to
+        // land on the real dashboard right now instead of asking the parent
+        // to reload. Sidebar list catches up on its own in the background.
+        setTags((prev: any[]) => {
+          const withoutDupe = prev.filter((t: any) => t.tag_id.toLowerCase() !== signupClaimedTag.tag_id.toLowerCase());
+          return [...withoutDupe, signupClaimedTag];
+        });
+        loadTagForEdit(signupClaimedTag);
+        fetched = [signupClaimedTag];
+      }
       if (!fetched || fetched.length === 0) {
         const knownRealCode = (registeredTagId || signupTagId || '').trim();
         if (!knownRealCode) {
@@ -813,6 +846,7 @@ export default function Dashboard() {
           setToastAction({ label: 'Reload now', onClick: () => window.location.reload() });
         }
       }
+      setSignupClaimedTag(null);
     } else {
       window.location.reload();
     }
